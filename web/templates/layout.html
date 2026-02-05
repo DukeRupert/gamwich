@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="garden">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline; }
+        .htmx-request.htmx-indicator { display: inline; }
+    </style>
+</head>
+<body class="min-h-screen bg-base-200">
+    <div class="navbar bg-base-100 shadow-md">
+        <div class="flex-1">
+            <a href="/" class="btn btn-ghost text-xl">🏠 Gamwich</a>
+        </div>
+        <div class="flex-none">
+            <ul class="menu menu-horizontal px-1">
+                <li><a href="/settings/family" class="btn btn-ghost">👨‍👩‍👧‍👦 Family</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <main class="container mx-auto p-4 max-w-4xl">
+        {{template "content" .}}
+    </main>
+</body>
+</html>
+
+{{define "content"}}
+<div class="hero min-h-[60vh]">
+    <div class="hero-content text-center">
+        <div class="max-w-md">
+            <h1 class="text-5xl font-bold">Welcome to Gamwich</h1>
+            <p class="py-6 text-lg">Your family's digital refrigerator door. Manage calendars, chores, groceries, and more — all from one screen.</p>
+            <a href="/settings/family" class="btn btn-primary btn-lg">Get Started — Add Family Members</a>
+        </div>
+    </div>
+</div>
+{{end}}
