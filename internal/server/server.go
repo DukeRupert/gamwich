@@ -52,6 +52,8 @@ func (s *Server) Router() http.Handler {
 
 	// PIN partials
 	mux.HandleFunc("GET /partials/family-members/{id}/pin", s.templateHandler.PINSetupForm)
+	mux.HandleFunc("GET /partials/family-members/{id}/pin/gate", s.templateHandler.PINGate)
+	mux.HandleFunc("POST /partials/family-members/{id}/pin/verify", s.templateHandler.PINVerifyThenAct)
 	mux.HandleFunc("POST /partials/family-members/{id}/pin", s.templateHandler.PINSetup)
 
 	// Static files

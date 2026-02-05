@@ -95,7 +95,7 @@ func (h *TemplateHandler) FamilyMemberCreate(w http.ResponseWriter, r *http.Requ
 	avatarEmoji := r.FormValue("avatar_emoji")
 
 	if name == "" {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "Name is required"})
+		h.renderToast(w, "error", "Name is required")
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *TemplateHandler) FamilyMemberCreate(w http.ResponseWriter, r *http.Requ
 		color = "#3B82F6"
 	}
 	if !hexColorRegexp.MatchString(color) {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "Invalid color format"})
+		h.renderToast(w, "error", "Invalid color format")
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *TemplateHandler) FamilyMemberCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if exists {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "A family member with that name already exists"})
+		h.renderToast(w, "error", "A family member with that name already exists")
 		return
 	}
 
@@ -152,12 +152,12 @@ func (h *TemplateHandler) FamilyMemberUpdate(w http.ResponseWriter, r *http.Requ
 	avatarEmoji := r.FormValue("avatar_emoji")
 
 	if name == "" {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "Name is required"})
+		h.renderToast(w, "error", "Name is required")
 		return
 	}
 
 	if !hexColorRegexp.MatchString(color) {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "Invalid color format"})
+		h.renderToast(w, "error", "Invalid color format")
 		return
 	}
 
@@ -167,7 +167,7 @@ func (h *TemplateHandler) FamilyMemberUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if exists {
-		h.renderPartial(w, "form-error", map[string]string{"Error": "A family member with that name already exists"})
+		h.renderToast(w, "error", "A family member with that name already exists")
 		return
 	}
 
@@ -219,6 +219,88 @@ func (h *TemplateHandler) PINSetupForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if member.HasPIN {
+		h.renderPartial(w, "pin-manage", member)
+	} else {
+		h.renderPartial(w, "pin-setup", member)
+	}
+}
+
+func (h *TemplateHandler) PINGate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	member, err := h.store.GetByID(id)
+	if err != nil || member == nil {
+		http.Error(w, "family member not found", http.StatusNotFound)
+		return
+	}
+
+	nextAction := r.URL.Query().Get("next")
+	if nextAction != "change" && nextAction != "clear" {
+		nextAction = "change"
+	}
+
+	data := struct {
+		ID         int64
+		Name       string
+		NextAction string
+	}{member.ID, member.Name, nextAction}
+
+	h.renderPartial(w, "pin-verify", data)
+}
+
+func (h *TemplateHandler) PINVerifyThenAct(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	pin := r.FormValue("pin")
+	nextAction := r.FormValue("next_action")
+
+	hash, err := h.store.GetPINHash(id)
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(pin)); err != nil {
+		h.renderToast(w, "error", "Incorrect PIN")
+
+		member, _ := h.store.GetByID(id)
+		data := struct {
+			ID         int64
+			Name       string
+			NextAction string
+		}{member.ID, member.Name, nextAction}
+		h.renderPartial(w, "pin-verify", data)
+		return
+	}
+
+	member, _ := h.store.GetByID(id)
+
+	if nextAction == "clear" {
+		if err := h.store.ClearPIN(id); err != nil {
+			http.Error(w, "failed to clear PIN", http.StatusInternalServerError)
+			return
+		}
+		h.renderToast(w, "success", "PIN removed")
+		members, _ := h.store.List()
+		h.renderPartial(w, "member-list", map[string]any{"Members": members})
+		return
+	}
+
+	// nextAction == "change": show the set-PIN form
 	h.renderPartial(w, "pin-setup", member)
 }
 
@@ -235,20 +317,11 @@ func (h *TemplateHandler) PINSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pin := r.FormValue("pin")
-	action := r.FormValue("action")
-
-	if action == "clear" {
-		if err := h.store.ClearPIN(id); err != nil {
-			http.Error(w, "failed to clear PIN", http.StatusInternalServerError)
-			return
-		}
-		member, _ := h.store.GetByID(id)
-		h.renderPartial(w, "pin-status", member)
-		return
-	}
 
 	if len(pin) != 4 || !isDigits(pin) {
-		h.renderPartial(w, "pin-error", map[string]string{"Error": "PIN must be exactly 4 digits"})
+		h.renderToast(w, "error", "PIN must be exactly 4 digits")
+		member, _ := h.store.GetByID(id)
+		h.renderPartial(w, "pin-setup", member)
 		return
 	}
 
@@ -263,8 +336,14 @@ func (h *TemplateHandler) PINSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member, _ := h.store.GetByID(id)
-	h.renderPartial(w, "pin-status", member)
+	h.renderToast(w, "success", "PIN set successfully")
+
+	members, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to load family members", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "member-list", map[string]any{"Members": members})
 }
 
 func (h *TemplateHandler) render(w http.ResponseWriter, name string, data any) {
@@ -281,4 +360,12 @@ func (h *TemplateHandler) renderPartial(w http.ResponseWriter, name string, data
 		log.Printf("template error rendering %q: %v", name, err)
 		fmt.Fprintf(w, `<div class="alert alert-error">Template error</div>`)
 	}
+}
+
+func (h *TemplateHandler) renderToast(w http.ResponseWriter, level, message string) {
+	tmplName := "toast-success"
+	if level == "error" {
+		tmplName = "toast-error"
+	}
+	h.templates.ExecuteTemplate(w, tmplName, map[string]string{"Message": message})
 }
