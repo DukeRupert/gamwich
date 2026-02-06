@@ -1,12 +1,33 @@
 # Gamwich — Feature Set
 
-> A self-hosted family calendar, chore list, and grocery list app designed for a kitchen touchscreen. Replaces the refrigerator door.
+> The open-source family dashboard. Free on your own hardware, with optional cloud services for remote access and backups.
+
+---
+
+## Product Vision
+
+Gamwich is a household command center — a digital refrigerator door that lives on a wall-mounted touchscreen, tablet, or countertop display. It replaces paper lists, scattered apps, and forgotten sticky notes with a single glanceable screen the whole family shares.
+
+### Distribution Model
+
+**Free tier (self-hosted):** The core app runs as a single Go binary on any hardware — a Raspberry Pi, an old laptop, a NAS, or a spare tablet. No account required, no internet required, no subscription. Your family's data stays on your device in a single SQLite file.
+
+**Cloud tier (paid subscription):** For families who want remote access from work or the store, encrypted offsite backups, and push notifications. The app still runs locally — the cloud tier adds connectivity and peace of mind, not core features.
+
+**Hosted tier (paid subscription):** For families who don't want to manage hardware. We run the instance, they use the app. Same experience, zero setup.
+
+### Core Differentiators
+
+- **No vendor lock-in.** The app works forever without an internet connection or a subscription. If Gamwich the company disappears, the software keeps running.
+- **Bring your own hardware.** A $50 Fire tablet or a spare iPad becomes a family dashboard. No proprietary $300 device required.
+- **Privacy by default.** Family routines, grocery habits, and kids' chore data never leave your home network unless you opt into cloud services.
+- **Open source.** The core app is open source. Community contributions, transparency, and trust.
 
 ---
 
 ## Core Concept
 
-Gamwich is a household command center that lives on a wall-mounted or countertop touchscreen in the kitchen. It should feel like a glanceable dashboard — not a phone app scaled up. The primary interaction model is quick taps and swipes by anyone in the family walking past, with a companion mobile view for on-the-go access.
+Gamwich is designed to feel like a glanceable dashboard — not a phone app scaled up. The primary interaction model is quick taps and swipes by anyone in the family walking past, with a companion mobile view for on-the-go access.
 
 ---
 
@@ -117,10 +138,13 @@ Replaces the sticky notes and scribbled reminders on the fridge.
 - **Calendar sync:** CalDAV server built-in (or CalDAV client syncing to external providers)
 
 ### Deployment
-- **Self-hosted** on home server or Raspberry Pi
-- **Single binary** — Go binary with embedded static assets
+- **Self-hosted** on home server, Raspberry Pi, NAS, or any device that runs Go or Docker
+- **Single binary** — Go binary with embedded static assets, zero external dependencies
 - **Docker option** — for easy deployment alongside other services
-- **Automatic backups** — SQLite DB snapshot to configurable location (local, NAS, etc.)
+- **Local backups** — SQLite DB snapshot to configurable local path (NAS, USB, etc.)
+- **Cloud backups (paid tier)** — encrypted offsite backup via Litestream or scheduled upload to managed storage
+- **Remote access (paid tier)** — tunnel relay service (Cloudflare Tunnel or custom) so the app is reachable from outside the home without port forwarding or dynamic DNS
+- **Hosted option (paid tier)** — fully managed instance for families who don't want to run hardware
 - **HTTPS** — via reverse proxy or built-in Let's Encrypt
 
 ### Touchscreen Considerations
@@ -132,10 +156,13 @@ Replaces the sticky notes and scribbled reminders on the fridge.
 - **Auto-brightness** — dim at night, bright during the day (CSS media query or JS-based schedule)
 - **Screen burn-in prevention** — subtle pixel shifting or idle mode transition
 
-### Authentication
-- **PIN per family member** — for "who's adding this?" attribution, not security theater
-- **Household-level access** — no login wall for the kitchen screen (trusted local network)
-- **Optional auth for remote access** — basic auth or token for accessing from outside the home
+### Authentication & Multi-Tenancy
+- **PIN per family member** — for "who's adding this?" attribution on the kitchen screen
+- **Auth accounts separate from family members** — parents/adults have login accounts (email-based, passwordless magic links), kids remain lightweight profiles
+- **Multi-tenant support** — multiple households on a single instance with isolated data (required for hosted tier, useful for self-hosted families sharing an instance)
+- **LAN kiosk mode** — authenticated session on the kitchen screen, no repeated logins for household members walking past
+- **Remote access** — magic link login for secure access over the internet (cloud tier provides the tunnel, auth is built into the core app)
+- See `dev/auth-plan.md` for detailed implementation plan
 
 ---
 
@@ -192,13 +219,28 @@ meals (Phase 2)
 - Frequent grocery items and auto-categorization
 - Idle/screensaver mode
 
-### Phase 3: Polish
+### Phase 3: Authentication & Multi-Tenancy
+- Passwordless auth (magic link emails)
+- Multi-household data isolation
+- Household-scoped WebSocket broadcasts
+- Session management and admin roles
+- Invite flow for adding household members
+- See `dev/auth-plan.md` for detailed implementation
+
+### Phase 4: Cloud Services (Paid Tier)
+- Remote access tunnel relay (Cloudflare Tunnel integration)
+- Encrypted offsite backups (Litestream or scheduled upload)
+- Push notifications (mobile companion)
+- Account management and billing
+- Hosted tier infrastructure
+
+### Phase 5: Polish & Extended Features
 - Chore rotation automation
 - Grocery suggestions based on purchase history
 - Multi-list support (Costco, hardware store, etc.)
 - Widgets/integrations (weather detail, school calendar import)
 - Kiosk mode installer script for Raspberry Pi
-- Backup/restore tooling
+- Local backup/restore tooling
 
 ---
 
@@ -209,5 +251,7 @@ meals (Phase 2)
 3. **Family-friendly** — a 7-year-old and a 70-year-old should both find it intuitive
 4. **Fast** — page transitions under 100ms, no loading spinners for common actions
 5. **Offline-resilient** — if the internet drops, the kitchen screen keeps working
-6. **Self-hosted** — your family's data stays on your hardware
-7. **Simple over clever** — no AI magic, no social features, no gamification bloat unless the family opts in
+6. **Local-first** — your family's data lives on your hardware, cloud services are opt-in
+7. **Free forever core** — the self-hosted app is fully functional without a subscription or internet connection
+8. **Simple over clever** — no AI magic, no social features, no gamification bloat unless the family opts in
+9. **No lock-in** — if the service shuts down, the software keeps running on your hardware
