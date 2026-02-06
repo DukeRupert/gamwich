@@ -3,13 +3,13 @@ module github.com/dukerupert/gamwich
 go 1.25.4
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/pressly/goose/v3 v3.26.0
 	golang.org/x/crypto v0.47.0
 	modernc.org/sqlite v1.44.3
 )
 
 require (
-	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -17,6 +17,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	github.com/stripe/stripe-go/v82 v82.5.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/sync v0.17.0 // indirect

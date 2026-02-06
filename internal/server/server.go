@@ -7,6 +7,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/handler"
+	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/middleware"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
@@ -28,9 +29,10 @@ type Server struct {
 	sessionStore    *store.SessionStore
 	householdStore  *store.HouseholdStore
 	rateLimiter     *middleware.RateLimiter
+	licenseClient   *license.Client
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client) *Server {
 	hub := ws.NewHub()
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
@@ -57,11 +59,12 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient),
 		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
 		sessionStore:    sessionStore,
 		householdStore:  householdStore,
 		rateLimiter:     middleware.NewRateLimiter(),
+		licenseClient:   licenseClient,
 	}
 }
 
@@ -78,6 +81,11 @@ func (s *Server) MagicLinkStore() *store.MagicLinkStore {
 // RateLimiter returns the rate limiter for cleanup tasks.
 func (s *Server) RateLimiter() *middleware.RateLimiter {
 	return s.rateLimiter
+}
+
+// LicenseClient returns the license client.
+func (s *Server) LicenseClient() *license.Client {
+	return s.licenseClient
 }
 
 func (s *Server) Router() http.Handler {
@@ -229,6 +237,8 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /partials/settings/weather", s.templateHandler.WeatherSettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/theme", s.templateHandler.ThemeSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/theme", s.templateHandler.ThemeSettingsUpdate)
+	mux.HandleFunc("GET /partials/settings/license", s.templateHandler.LicenseSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/license", s.templateHandler.LicenseKeyUpdate)
 	mux.HandleFunc("GET /partials/idle/next-event", s.templateHandler.NextUpcomingEventPartial)
 
 	// Calendar view partials

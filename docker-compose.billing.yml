@@ -1,0 +1,20 @@
+services:
+  billing:
+    image: dukerupert/gamwich-billing:latest
+    ports:
+      - "127.0.0.1:8092:8090"
+    volumes:
+      - billing-data:/data
+    environment:
+      BILLING_DB_PATH: /data/billing.db
+      BILLING_BASE_URL: ${BILLING_BASE_URL:-}
+      BILLING_POSTMARK_TOKEN: ${BILLING_POSTMARK_TOKEN:-}
+      BILLING_FROM_EMAIL: ${BILLING_FROM_EMAIL:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_CLOUD_PRICE_ID: ${STRIPE_CLOUD_PRICE_ID:-}
+      STRIPE_CLOUD_ANNUAL_PRICE_ID: ${STRIPE_CLOUD_ANNUAL_PRICE_ID:-}
+    restart: unless-stopped
+
+volumes:
+  billing-data:

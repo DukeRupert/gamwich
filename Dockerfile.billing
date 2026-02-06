@@ -1,0 +1,26 @@
+# Stage 1 — Build
+FROM golang:1.25-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app/billing ./cmd/billing
+
+# Stage 2 — Runtime
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=build /app/billing .
+COPY --from=build /src/web/billing/ ./web/billing/
+
+EXPOSE 8090
+
+ENV BILLING_DB_PATH=/data/billing.db
+
+ENTRYPOINT ["./billing"]

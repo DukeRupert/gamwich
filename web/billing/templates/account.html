@@ -1,0 +1,61 @@
+{{define "content"}}
+<h1 class="text-3xl font-bold mb-6">Account</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Account Info -->
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+            <h2 class="card-title">Account</h2>
+            <div class="space-y-2">
+                <p><span class="font-medium">Email:</span> {{.Account.Email}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscription -->
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+            <h2 class="card-title">Subscription</h2>
+            {{if .Subscription}}
+            <div class="space-y-2">
+                <div class="flex items-center gap-2">
+                    <div class="badge badge-primary">{{.Subscription.Plan}}</div>
+                    <div class="badge badge-outline">{{.Subscription.Status}}</div>
+                </div>
+                {{if .Subscription.CancelAtPeriodEnd}}
+                <p class="text-sm text-warning">Cancels at end of billing period</p>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="text-base-content/60">No active subscription</p>
+            <a href="/pricing" class="btn btn-primary btn-sm mt-2">View Plans</a>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- License Key -->
+    {{if .LicenseKey}}
+    <div class="card bg-base-100 shadow-md md:col-span-2">
+        <div class="card-body">
+            <h2 class="card-title">License Key</h2>
+            <p class="text-sm text-base-content/60 mb-2">Enter this key in your Gamwich app settings to activate cloud features.</p>
+            <div class="flex items-center gap-2">
+                <code class="font-mono bg-base-200 px-3 py-2 rounded-lg text-lg select-all">{{.LicenseKey.Key}}</code>
+                <button class="btn btn-ghost btn-sm"
+                        onclick="navigator.clipboard.writeText('{{.LicenseKey.Key}}')">
+                    Copy
+                </button>
+            </div>
+            {{if .LicenseKey.Features}}
+            <div class="flex flex-wrap gap-1 mt-2">
+                <span class="text-sm font-medium mr-1">Features:</span>
+                <span class="badge badge-sm badge-outline">{{.LicenseKey.Features}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{template "layout.html" .}}

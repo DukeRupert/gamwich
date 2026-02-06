@@ -12,6 +12,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/email"
+	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/server"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
@@ -66,7 +67,13 @@ func main() {
 	}
 	emailClient := email.NewClient(postmarkToken, fromEmail, baseURL)
 
-	srv := server.New(db, weatherSvc, emailClient, baseURL)
+	// License client
+	licenseClient := license.NewClient(license.Config{
+		Key:           os.Getenv("GAMWICH_LICENSE_KEY"),
+		ValidationURL: os.Getenv("GAMWICH_LICENSE_URL"),
+	})
+
+	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -75,6 +82,11 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 		// No ReadTimeout/WriteTimeout — WebSocket connections are long-lived
 	}
+
+	// Start license validation
+	licenseCtx, licenseCancel := context.WithCancel(context.Background())
+	defer licenseCancel()
+	licenseClient.Start(licenseCtx)
 
 	// Background cleanup goroutine
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

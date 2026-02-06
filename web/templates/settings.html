@@ -87,6 +87,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- Subscription -->
+        <div class="card bg-base-100 shadow-md">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    Subscription
+                </h2>
+                <div id="license-settings-container"
+                     hx-get="/partials/settings/license"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {{end}}
@@ -235,6 +253,65 @@
 
     <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
 </form>
+{{end}}
+
+{{define "license-settings-form"}}
+<div class="space-y-3">
+    {{if .IsFreeTier}}
+    <div class="badge badge-ghost">Free</div>
+    <p class="text-sm text-base-content/60">Enter a license key to unlock cloud features like tunnel access, backups, and push notifications.</p>
+    {{else}}
+    <div class="flex items-center gap-2">
+        <div class="badge badge-primary">{{.Plan}}</div>
+        {{if .Valid}}
+        <div class="badge badge-success badge-outline">Active</div>
+        {{else}}
+        <div class="badge badge-warning badge-outline">{{.Warning}}</div>
+        {{end}}
+    </div>
+    {{if .Features}}
+    <div class="flex flex-wrap gap-1 mt-1">
+        {{range .Features}}
+        <span class="badge badge-sm badge-outline">{{.}}</span>
+        {{end}}
+    </div>
+    {{end}}
+    {{if .ExpiresAt}}
+    <p class="text-xs text-base-content/50">Expires: {{.ExpiresAt}}</p>
+    {{end}}
+    {{if .Offline}}
+    <p class="text-xs text-warning">Offline - using cached license data</p>
+    {{end}}
+    {{end}}
+
+    <form hx-put="/partials/settings/license"
+          hx-target="#license-settings-container"
+          hx-swap="innerHTML"
+          class="space-y-3 mt-2"
+          x-data="{ editing: false }">
+        <div x-show="!editing">
+            <button type="button" class="btn btn-sm btn-ghost" @click="editing = true">
+                {{if .IsFreeTier}}Enter license key{{else}}Change key{{end}}
+            </button>
+        </div>
+        <div x-show="editing" class="space-y-2">
+            <input type="text" name="license_key"
+                   placeholder="GW-XXXX-XXXX-XXXX-XXXX"
+                   class="input input-bordered input-sm w-full font-mono"
+                   pattern="GW-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}">
+            <div class="flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-1">Save</button>
+                <button type="button" class="btn btn-ghost btn-sm" @click="editing = false">Cancel</button>
+            </div>
+        </div>
+    </form>
+
+    {{if .IsFreeTier}}
+    <a href="https://gamwich.app/pricing" target="_blank" rel="noopener" class="btn btn-outline btn-sm w-full mt-2">
+        Upgrade to Cloud
+    </a>
+    {{end}}
+</div>
 {{end}}
 
 {{define "weather-settings-form"}}

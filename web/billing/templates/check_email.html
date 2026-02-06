@@ -1,0 +1,21 @@
+{{define "content"}}
+<div class="flex justify-center items-center min-h-[60vh]">
+    <div class="card bg-base-100 shadow-xl w-full max-w-md">
+        <div class="card-body text-center">
+            <div class="text-5xl mb-4">&#9993;</div>
+            <h2 class="card-title text-2xl justify-center mb-2">Check your email</h2>
+            <p class="text-base-content/60">
+                We sent a sign-in link to <strong>{{.Email}}</strong>.
+            </p>
+            <p class="text-base-content/60 text-sm mt-2">
+                The link expires in 15 minutes. Check your spam folder if you don't see it.
+            </p>
+            <div class="mt-4">
+                <a href="/login" class="btn btn-ghost btn-sm">Back to login</a>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{template "layout.html" .}}

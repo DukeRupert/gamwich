@@ -13,6 +13,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/chore"
 	"github.com/dukerupert/gamwich/internal/grocery"
+	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
@@ -33,10 +34,11 @@ type TemplateHandler struct {
 	settingsStore *store.SettingsStore
 	weatherSvc    *weather.Service
 	hub           *websocket.Hub
+	licenseClient *license.Client
 	templates     *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
@@ -51,6 +53,7 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		settingsStore: ss,
 		weatherSvc:    w,
 		hub:           hub,
+		licenseClient: lc,
 		templates:     tmpl,
 	}
 }
@@ -81,6 +84,7 @@ func (h *TemplateHandler) buildDashboardData(r *http.Request, section string) (m
 		"Weather":        h.weatherSvc.GetWeather(),
 		"KioskSettings":  kioskSettings,
 		"ThemeSettings":  themeSettings,
+		"IsFreeTier":     h.licenseClient.IsFreeTier(),
 	}
 	return data, nil
 }
@@ -3430,6 +3434,46 @@ func (h *TemplateHandler) buildEventDetailData(event *model.CalendarEvent, isRec
 	}
 
 	return data
+}
+
+// LicenseSettingsPartial renders the license/subscription settings card content.
+func (h *TemplateHandler) LicenseSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	status := h.licenseClient.Status()
+	data := map[string]any{
+		"IsFreeTier": h.licenseClient.IsFreeTier(),
+		"Plan":       status.Plan,
+		"Valid":      status.Valid,
+		"Features":   status.Features,
+		"ExpiresAt":  status.ExpiresAt,
+		"Warning":    status.Warning,
+		"Offline":    status.Offline,
+	}
+	h.renderPartial(w, "license-settings-form", data)
+}
+
+// LicenseKeyUpdate handles updating the license key from settings.
+func (h *TemplateHandler) LicenseKeyUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	key := strings.TrimSpace(r.FormValue("license_key"))
+	h.licenseClient.SetKey(key)
+
+	status := h.licenseClient.Status()
+	data := map[string]any{
+		"IsFreeTier": h.licenseClient.IsFreeTier(),
+		"Plan":       status.Plan,
+		"Valid":      status.Valid,
+		"Features":   status.Features,
+		"ExpiresAt":  status.ExpiresAt,
+		"Warning":    status.Warning,
+		"Offline":    status.Offline,
+	}
+
+	w.Header().Set("HX-Trigger", `{"showToast": "License key updated"}`)
+	h.renderPartial(w, "license-settings-form", data)
 }
 
 func (h *TemplateHandler) render(w http.ResponseWriter, name string, data any) {

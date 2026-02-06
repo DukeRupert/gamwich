@@ -1,0 +1,107 @@
+{{define "content"}}
+<div class="text-center mb-8">
+    <h1 class="text-4xl font-bold mb-2">Pricing</h1>
+    <p class="text-lg text-base-content/60">Choose the plan that works for your household.</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+    <!-- Free Plan -->
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+            <h2 class="card-title justify-center">Free</h2>
+            <div class="text-center my-4">
+                <span class="text-4xl font-bold">$0</span>
+                <span class="text-base-content/60">/month</span>
+            </div>
+            <ul class="space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Dashboard & calendar
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Chores & grocery lists
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Notes & rewards
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Self-hosted
+                </li>
+            </ul>
+            <div class="card-actions justify-center mt-4">
+                <span class="btn btn-ghost btn-sm">Current plan</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cloud Plan -->
+    <div class="card bg-primary text-primary-content shadow-xl border-2 border-primary">
+        <div class="card-body">
+            <div class="badge badge-secondary badge-sm self-center">Most Popular</div>
+            <h2 class="card-title justify-center">Cloud</h2>
+            <div class="text-center my-4">
+                <span class="text-4xl font-bold">$5</span>
+                <span class="opacity-80">/month</span>
+            </div>
+            <ul class="space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Everything in Free
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Tunnel access (remote)
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Cloud backups
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Push notifications
+                </li>
+            </ul>
+            <div class="card-actions justify-center mt-4">
+                <a href="/login" class="btn btn-secondary btn-sm w-full">Get Started</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hosted Plan -->
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+            <h2 class="card-title justify-center">Hosted</h2>
+            <div class="text-center my-4">
+                <span class="text-4xl font-bold">$10</span>
+                <span class="text-base-content/60">/month</span>
+            </div>
+            <ul class="space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Everything in Cloud
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Fully managed hosting
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Automatic updates
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Priority support
+                </li>
+            </ul>
+            <div class="card-actions justify-center mt-4">
+                <span class="btn btn-outline btn-sm w-full opacity-50">Coming Soon</span>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{template "layout.html" .}}
