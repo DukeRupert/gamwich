@@ -105,6 +105,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- Remote Access -->
+        <div class="card bg-base-100 shadow-md">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Remote Access
+                </h2>
+                <div id="tunnel-settings-container"
+                     hx-get="/partials/settings/tunnel"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {{end}}
@@ -312,6 +330,94 @@
     </a>
     {{end}}
 </div>
+{{end}}
+
+{{define "tunnel-settings-form"}}
+<div class="space-y-3">
+    {{if not .HasTunnel}}
+    <div class="badge badge-ghost">Cloud Feature</div>
+    <p class="text-sm text-base-content/60">Remote access lets you reach your Gamwich from anywhere via a secure tunnel.</p>
+    <a href="https://gamwich.app/pricing" target="_blank" rel="noopener" class="btn btn-outline btn-sm w-full mt-2">
+        Upgrade to Cloud
+    </a>
+    {{else}}
+    <!-- Status badge (polls every 10s) -->
+    <div id="tunnel-status-badge"
+         hx-get="/partials/settings/tunnel/status"
+         hx-trigger="every 10s"
+         hx-swap="innerHTML">
+        {{template "tunnel-status-inner" .}}
+    </div>
+
+    <form hx-put="/partials/settings/tunnel"
+          hx-target="#tunnel-settings-container"
+          hx-swap="innerHTML"
+          class="space-y-3"
+          x-data="{ enabled: {{.TunnelEnabled}}, showToken: false }">
+
+        <!-- Enable/Disable toggle -->
+        <div class="form-control">
+            <label class="label cursor-pointer">
+                <span class="label-text font-medium">Enable tunnel</span>
+                <input type="hidden" name="tunnel_enabled" :value="enabled ? 'true' : 'false'">
+                <input type="checkbox" class="toggle toggle-primary"
+                       x-model="enabled">
+            </label>
+        </div>
+
+        <!-- Token input -->
+        <div x-show="enabled" class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Tunnel token</span>
+                <button type="button" class="btn btn-xs btn-ghost" @click="showToken = !showToken"
+                        x-text="showToken ? 'Hide' : 'Show'"></button>
+            </label>
+            <input :type="showToken ? 'text' : 'password'" name="tunnel_token"
+                   value="{{.TunnelToken}}"
+                   placeholder="Cloudflare tunnel token"
+                   class="input input-bordered input-sm w-full font-mono">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
+    </form>
+    {{end}}
+</div>
+{{end}}
+
+{{define "tunnel-status-inner"}}
+{{if eq .TunnelState "connected"}}
+<div class="flex items-center gap-2 flex-wrap">
+    <div class="badge badge-success">Connected</div>
+    {{if .TunnelSub}}
+    <a href="https://{{.TunnelSub}}" target="_blank" rel="noopener" class="text-xs link link-primary">{{.TunnelSub}}</a>
+    {{end}}
+</div>
+{{else if eq .TunnelState "connecting"}}
+<div class="flex items-center gap-2">
+    <div class="badge badge-info">Connecting</div>
+    <span class="loading loading-spinner loading-xs"></span>
+</div>
+{{else if eq .TunnelState "reconnecting"}}
+<div class="flex items-center gap-2">
+    <div class="badge badge-warning">Reconnecting</div>
+    <span class="loading loading-spinner loading-xs"></span>
+</div>
+{{else if eq .TunnelState "error"}}
+<div class="space-y-1">
+    <div class="badge badge-error">Error</div>
+    {{if .TunnelError}}
+    <p class="text-xs text-error">{{.TunnelError}}</p>
+    {{end}}
+</div>
+{{else if eq .TunnelState "stopped"}}
+<div class="badge badge-ghost">Stopped</div>
+{{else}}
+<div class="badge badge-ghost">Disabled</div>
+{{end}}
+{{end}}
+
+{{define "tunnel-status-badge"}}
+{{template "tunnel-status-inner" .}}
 {{end}}
 
 {{define "weather-settings-form"}}

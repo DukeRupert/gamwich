@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/middleware"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/tunnel"
 	"github.com/dukerupert/gamwich/internal/weather"
 	ws "github.com/dukerupert/gamwich/internal/websocket"
 )
@@ -30,9 +32,10 @@ type Server struct {
 	householdStore  *store.HouseholdStore
 	rateLimiter     *middleware.RateLimiter
 	licenseClient   *license.Client
+	tunnelManager   *tunnel.Manager
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string) *Server {
 	hub := ws.NewHub()
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
@@ -49,6 +52,26 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 	sessionStore := store.NewSessionStore(db)
 	magicLinkStore := store.NewMagicLinkStore(db)
 
+	// Tunnel manager
+	tunnelCfg := tunnel.Config{
+		LocalURL: "http://localhost:" + port,
+	}
+	if ts, err := settingsStore.GetTunnelSettings(); err == nil {
+		tunnelCfg.Token = ts["tunnel_token"]
+		tunnelCfg.Enabled = ts["tunnel_enabled"] == "true"
+	}
+	tunnelMgr := tunnel.NewManager(tunnelCfg, func(s tunnel.Status) {
+		hub.Broadcast(ws.Message{
+			Type:   "tunnel_status",
+			Entity: "tunnel",
+			Action: string(s.State),
+			Extra: map[string]any{
+				"subdomain": s.Subdomain,
+				"error":     s.Error,
+			},
+		})
+	})
+
 	return &Server{
 		db:              db,
 		hub:             hub,
@@ -59,12 +82,13 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr),
 		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
 		sessionStore:    sessionStore,
 		householdStore:  householdStore,
 		rateLimiter:     middleware.NewRateLimiter(),
 		licenseClient:   licenseClient,
+		tunnelManager:   tunnelMgr,
 	}
 }
 
@@ -88,6 +112,11 @@ func (s *Server) LicenseClient() *license.Client {
 	return s.licenseClient
 }
 
+// TunnelManager returns the tunnel manager.
+func (s *Server) TunnelManager() *tunnel.Manager {
+	return s.tunnelManager
+}
+
 func (s *Server) Router() http.Handler {
 	outerMux := http.NewServeMux()
 
@@ -99,6 +128,7 @@ func (s *Server) Router() http.Handler {
 	outerMux.HandleFunc("GET /auth/verify", s.authH.Verify)
 	outerMux.HandleFunc("GET /invite/accept", s.authH.InviteAccept)
 	outerMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	outerMux.HandleFunc("GET /health", s.healthHandler)
 
 	// Protected routes — wrapped with RequireAuth middleware
 	protectedMux := http.NewServeMux()
@@ -110,9 +140,14 @@ func (s *Server) Router() http.Handler {
 	return outerMux
 }
 
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func (s *Server) rateLimitedHandler(h http.HandlerFunc) http.HandlerFunc {
 	keyFunc := func(r *http.Request) string {
-		return r.RemoteAddr
+		return middleware.RealIP(r)
 	}
 	rl := middleware.RateLimit(s.rateLimiter, keyFunc, 10, time.Minute)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +274,9 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /partials/settings/theme", s.templateHandler.ThemeSettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/license", s.templateHandler.LicenseSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/license", s.templateHandler.LicenseKeyUpdate)
+	mux.HandleFunc("GET /partials/settings/tunnel", s.templateHandler.TunnelSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/tunnel", s.templateHandler.TunnelSettingsUpdate)
+	mux.HandleFunc("GET /partials/settings/tunnel/status", s.templateHandler.TunnelStatusPartial)
 	mux.HandleFunc("GET /partials/idle/next-event", s.templateHandler.NextUpcomingEventPartial)
 
 	// Calendar view partials

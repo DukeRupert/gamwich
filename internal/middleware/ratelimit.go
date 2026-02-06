@@ -1,10 +1,32 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
+
+// RealIP extracts the client's real IP address, preferring Cloudflare's
+// CF-Connecting-IP header, then X-Forwarded-For, and falling back to RemoteAddr.
+func RealIP(r *http.Request) string {
+	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// First IP in the chain is the original client
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
 
 type entry struct {
 	count    int

@@ -27,6 +27,11 @@ var themeKeys = []string{
 	"theme_dark",
 }
 
+var tunnelKeys = []string{
+	"tunnel_enabled",
+	"tunnel_token",
+}
+
 type SettingsStore struct {
 	db *sql.DB
 }
@@ -119,6 +124,22 @@ func (s *SettingsStore) GetThemeSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get theme setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetTunnelSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range tunnelKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get tunnel setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

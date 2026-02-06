@@ -17,6 +17,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/tunnel"
 	"github.com/dukerupert/gamwich/internal/weather"
 	"github.com/dukerupert/gamwich/internal/websocket"
 	"golang.org/x/crypto/bcrypt"
@@ -35,10 +36,11 @@ type TemplateHandler struct {
 	weatherSvc    *weather.Service
 	hub           *websocket.Hub
 	licenseClient *license.Client
+	tunnelManager *tunnel.Manager
 	templates     *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
@@ -54,6 +56,7 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		weatherSvc:    w,
 		hub:           hub,
 		licenseClient: lc,
+		tunnelManager: tm,
 		templates:     tmpl,
 	}
 }
@@ -3437,6 +3440,65 @@ func (h *TemplateHandler) buildEventDetailData(event *model.CalendarEvent, isRec
 }
 
 // LicenseSettingsPartial renders the license/subscription settings card content.
+// TunnelSettingsPartial renders the tunnel settings card content.
+func (h *TemplateHandler) TunnelSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	hasTunnel := h.licenseClient.HasFeature("tunnel")
+	status := h.tunnelManager.Status()
+	tunnelSettings, _ := h.settingsStore.GetTunnelSettings()
+	data := map[string]any{
+		"HasTunnel":     hasTunnel,
+		"TunnelState":   string(status.State),
+		"TunnelSub":     status.Subdomain,
+		"TunnelError":   status.Error,
+		"TunnelEnabled": tunnelSettings["tunnel_enabled"] == "true",
+		"TunnelToken":   tunnelSettings["tunnel_token"],
+	}
+	h.renderPartial(w, "tunnel-settings-form", data)
+}
+
+// TunnelSettingsUpdate handles saving tunnel settings.
+func (h *TemplateHandler) TunnelSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	token := strings.TrimSpace(r.FormValue("tunnel_token"))
+	enabled := r.FormValue("tunnel_enabled") == "true"
+
+	h.settingsStore.Set("tunnel_token", token)
+	h.settingsStore.Set("tunnel_enabled", fmt.Sprintf("%t", enabled))
+
+	h.tunnelManager.UpdateConfig(tunnel.Config{
+		Token:   token,
+		Enabled: enabled,
+	})
+
+	status := h.tunnelManager.Status()
+	data := map[string]any{
+		"HasTunnel":     h.licenseClient.HasFeature("tunnel"),
+		"TunnelState":   string(status.State),
+		"TunnelSub":     status.Subdomain,
+		"TunnelError":   status.Error,
+		"TunnelEnabled": enabled,
+		"TunnelToken":   token,
+	}
+
+	w.Header().Set("HX-Trigger", `{"showToast": "Tunnel settings updated"}`)
+	h.renderPartial(w, "tunnel-settings-form", data)
+}
+
+// TunnelStatusPartial returns just the tunnel status badge for polling.
+func (h *TemplateHandler) TunnelStatusPartial(w http.ResponseWriter, r *http.Request) {
+	status := h.tunnelManager.Status()
+	data := map[string]any{
+		"TunnelState": string(status.State),
+		"TunnelSub":   status.Subdomain,
+		"TunnelError": status.Error,
+	}
+	h.renderPartial(w, "tunnel-status-badge", data)
+}
+
 func (h *TemplateHandler) LicenseSettingsPartial(w http.ResponseWriter, r *http.Request) {
 	status := h.licenseClient.Status()
 	data := map[string]any{

@@ -12,7 +12,14 @@ RUN CGO_ENABLED=0 go build -o /app/gamwich ./cmd/gamwich
 # Stage 2 — Runtime
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata \
+    && ARCH=$(uname -m) \
+    && if [ "$ARCH" = "x86_64" ]; then CF_ARCH="amd64"; \
+       elif [ "$ARCH" = "aarch64" ]; then CF_ARCH="arm64"; \
+       else CF_ARCH="amd64"; fi \
+    && wget -q -O /usr/local/bin/cloudflared \
+       "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}" \
+    && chmod +x /usr/local/bin/cloudflared
 
 WORKDIR /app
 

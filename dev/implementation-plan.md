@@ -406,37 +406,39 @@ The Cloud tier monetizes the natural desire for remote access and data safety. T
 
 ---
 
-### Milestone 4.2: Remote Access Tunnel
+### Milestone 4.2: Remote Access Tunnel ✅
 
 **Goal:** Access a self-hosted Gamwich instance from anywhere without port forwarding, VPN, or dynamic DNS.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Cloudflare Tunnel integration**
-   - `internal/tunnel/cloudflare.go` — wraps `cloudflared` client library or manages subprocess
-   - On Cloud tier activation: register instance with Gamwich's Cloudflare account
-   - Assign subdomain: `{household-slug}.tunnel.gamwich.app`
-   - TLS, DDoS protection, and edge routing handled by Cloudflare
-   - _Test: Tunnel connects, external request reaches local instance_
+1. **~~Cloudflare Tunnel integration~~** ✅
+   - `internal/tunnel/tunnel.go` — Manager struct managing `cloudflared` subprocess
+   - `internal/tunnel/logparser.go` — Parses cloudflared stderr for connection state
+   - Token-based configuration: user enters Cloudflare tunnel token in settings
+   - Subdomain extracted from cloudflared logs, displayed in settings UI
 
-2. **Tunnel lifecycle management**
-   - Start tunnel on app startup if Cloud tier is active
-   - Graceful shutdown on app stop
-   - Auto-reconnect on network interruption
-   - Health check endpoint visible through tunnel
-   - Status indicator in settings page ("Tunnel: Connected" / "Disconnected")
-   - _Test: Tunnel reconnects after network interruption_
+2. **~~Tunnel lifecycle management~~** ✅
+   - Start tunnel on app startup if Cloud tier active and tunnel enabled
+   - Graceful shutdown (context cancel → SIGTERM, 10s timeout)
+   - Auto-reconnect with exponential backoff (1s→60s cap, max 10 failures)
+   - `GET /health` public endpoint for tunnel health checks
+   - Status indicator in settings: Connected/Connecting/Reconnecting/Error/Stopped/Disabled
+   - 10 unit tests (`internal/tunnel/tunnel_test.go`)
 
-3. **Tunnel configuration UI**
-   - Settings page: enable/disable tunnel, view assigned subdomain, connection status
-   - First-time setup: guided flow to activate Cloud tier and establish tunnel
-   - _Test: Toggle tunnel on/off from settings, status updates in real-time_
+3. **~~Tunnel configuration UI~~** ✅
+   - Settings page "Remote Access" card with enable/disable toggle, token input, status badge
+   - Status polling every 10s via htmx
+   - Feature-gated: shows "Cloud Feature" upgrade prompt without tunnel license
+   - WebSocket broadcast on state changes
 
-4. **Security considerations**
-   - All traffic through tunnel uses existing session auth (no additional auth layer needed)
-   - Rate limiting applies to tunnel traffic the same as direct traffic
-   - Tunnel only exposes the Gamwich HTTP server, not the host machine
-   - Document: users should still set strong PINs for family members when using remote access
+4. **~~Security considerations~~** ✅
+   - Rate limiter updated with `RealIP()` — prefers CF-Connecting-IP → X-Forwarded-For → RemoteAddr
+   - Tunnel only exposes Gamwich HTTP server
+   - Existing session auth applies to all tunnel traffic
+   - `cloudflared` installed in Dockerfile (multi-arch: amd64/arm64)
 
 ---
 

@@ -73,7 +73,7 @@ func main() {
 		ValidationURL: os.Getenv("GAMWICH_LICENSE_URL"),
 	})
 
-	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient)
+	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -87,6 +87,15 @@ func main() {
 	licenseCtx, licenseCancel := context.WithCancel(context.Background())
 	defer licenseCancel()
 	licenseClient.Start(licenseCtx)
+
+	// Start tunnel if enabled and licensed
+	tunnelCtx, tunnelCancel := context.WithCancel(context.Background())
+	defer tunnelCancel()
+	if licenseClient.HasFeature("tunnel") {
+		if err := srv.TunnelManager().Start(tunnelCtx); err != nil {
+			log.Printf("tunnel start: %v", err)
+		}
+	}
 
 	// Background cleanup goroutine
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
@@ -126,6 +135,8 @@ func main() {
 	<-quit
 
 	fmt.Println("\nShutting down...")
+	tunnelCancel()
+	srv.TunnelManager().Stop()
 	cleanupCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
