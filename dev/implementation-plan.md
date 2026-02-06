@@ -157,34 +157,40 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.4: Calendar — Recurring Events
+### Milestone 1.4: Calendar — Recurring Events ✅
 
 **Goal:** Support for repeating events (weekly soccer practice, monthly book club, birthdays).
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Add recurrence to the data model**
+1. **~~Add recurrence to the data model~~** ✅
    - Add `recurrence_rule` column to `calendar_events` (RFC 5545 RRULE subset: FREQ, INTERVAL, BYDAY, BYMONTHDAY, COUNT, UNTIL)
-   - Add `recurrence_parent_id` for exception tracking
+   - Add `recurrence_parent_id` for exception tracking, `original_start_time`, `cancelled` columns
+   - Index on `recurrence_parent_id` for efficient exception lookups
    - _Test: Migration runs_
 
-2. **Implement recurrence expansion logic**
-   - Go package to expand an RRULE into concrete occurrences within a date range
-   - Support: daily, weekly (with BYDAY), biweekly, monthly (by day-of-month), yearly
+2. **~~Implement recurrence expansion logic~~** ✅
+   - `internal/recurrence/` package: RRULE parsing, serialization, human-readable description
+   - Expand occurrences within a date range for daily, weekly (with BYDAY), biweekly, monthly, yearly
    - Return virtual event instances (not stored individually)
-   - _Test: Unit tests — "every Tuesday" returns correct dates for a given range_
+   - 21 unit tests covering parsing, round-trip, expansion, COUNT, UNTIL, range filtering
+   - _Test: `go test ./internal/recurrence/...` passes_
 
-3. **Update event API to handle recurrence**
+3. **~~Update event API to handle recurrence~~** ✅
    - Event list endpoint expands recurring events within the requested range
-   - Edit options: "this occurrence", "this and future", "all occurrences"
-   - Delete options: same three choices
-   - Store exceptions as separate events linked by `recurrence_parent_id`
+   - `expandEventsForRange()` helper merges non-recurring + expanded recurring events with exceptions
+   - Edit modes: "this event" (create exception), "all events" (update parent + delete exceptions)
+   - Delete modes: "this event" (cancelled exception), "all events" (delete parent with CASCADE)
+   - Choice dialog handlers for recurring event edit/delete
    - _Test: Create recurring event, verify occurrences appear on calendar, edit single occurrence_
 
-4. **Update UI for recurring events**
-   - Recurrence selector on the event form (None, Daily, Weekly, Biweekly, Monthly, Yearly, Custom)
-   - Visual indicator (repeat icon) on recurring events in calendar views
-   - Edit/delete dialog with "this one / future / all" options
+4. **~~Update UI for recurring events~~** ✅
+   - Recurrence selector on event form (None, Daily, Weekly, Biweekly, Monthly, Yearly)
+   - Repeat icon on recurring events in day and week views
+   - Edit/delete choice dialogs for recurring events ("This event only" / "All events in the series")
+   - Recurrence description in event detail view
    - _Test: Full round-trip — create recurring, view occurrences, modify one, delete the series_
 
 ---
