@@ -12,16 +12,19 @@ import (
 type Server struct {
 	db              *sql.DB
 	familyMemberH   *handler.FamilyMemberHandler
+	calendarEventH  *handler.CalendarEventHandler
 	templateHandler *handler.TemplateHandler
 }
 
 func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	familyMemberStore := store.NewFamilyMemberStore(db)
+	eventStore := store.NewEventStore(db)
 
 	return &Server{
 		db:              db,
 		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, weatherSvc),
+		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, weatherSvc),
 	}
 }
 
@@ -39,6 +42,13 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/family-members/{id}/pin", s.familyMemberH.SetPIN)
 	mux.HandleFunc("DELETE /api/family-members/{id}/pin", s.familyMemberH.ClearPIN)
 	mux.HandleFunc("POST /api/family-members/{id}/pin/verify", s.familyMemberH.VerifyPIN)
+
+	// Calendar event API routes
+	mux.HandleFunc("POST /api/events", s.calendarEventH.Create)
+	mux.HandleFunc("GET /api/events", s.calendarEventH.List)
+	mux.HandleFunc("GET /api/events/{id}", s.calendarEventH.Get)
+	mux.HandleFunc("PUT /api/events/{id}", s.calendarEventH.Update)
+	mux.HandleFunc("DELETE /api/events/{id}", s.calendarEventH.Delete)
 
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)

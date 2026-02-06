@@ -18,14 +18,19 @@ const activeUserCookie = "gamwich_active_user"
 
 type TemplateHandler struct {
 	store      *store.FamilyMemberStore
+	eventStore *store.EventStore
 	weatherSvc *weather.Service
 	templates  *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, w *weather.Service) *TemplateHandler {
-	tmpl := template.Must(template.ParseGlob("web/templates/*.html"))
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, w *weather.Service) *TemplateHandler {
+	funcMap := template.FuncMap{
+		"add": func(a, b int) int { return a + b },
+	}
+	tmpl := template.Must(template.New("").Funcs(funcMap).ParseGlob("web/templates/*.html"))
 	return &TemplateHandler{
 		store:      s,
+		eventStore: es,
 		weatherSvc: w,
 		templates:  tmpl,
 	}
