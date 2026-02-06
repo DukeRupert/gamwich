@@ -6,6 +6,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/handler"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/weather"
 )
 
 type Server struct {
@@ -14,13 +15,13 @@ type Server struct {
 	templateHandler *handler.TemplateHandler
 }
 
-func New(db *sql.DB) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	familyMemberStore := store.NewFamilyMemberStore(db)
 
 	return &Server{
 		db:              db,
 		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, weatherSvc),
 	}
 }
 
@@ -39,11 +40,30 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/family-members/{id}/pin", s.familyMemberH.ClearPIN)
 	mux.HandleFunc("POST /api/family-members/{id}/pin/verify", s.familyMemberH.VerifyPIN)
 
-	// Page routes
+	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
+	mux.HandleFunc("GET /calendar", s.templateHandler.SectionPage("calendar"))
+	mux.HandleFunc("GET /chores", s.templateHandler.SectionPage("chores"))
+	mux.HandleFunc("GET /grocery", s.templateHandler.SectionPage("grocery"))
+	mux.HandleFunc("GET /settings", s.templateHandler.SectionPage("settings"))
 	mux.HandleFunc("GET /settings/family", s.templateHandler.FamilyMembers)
 
-	// htmx partial routes
+	// Section partials (HTMX)
+	mux.HandleFunc("GET /partials/dashboard", s.templateHandler.DashboardPartial)
+	mux.HandleFunc("GET /partials/calendar", s.templateHandler.CalendarPartial)
+	mux.HandleFunc("GET /partials/chores", s.templateHandler.ChoresPartial)
+	mux.HandleFunc("GET /partials/grocery", s.templateHandler.GroceryPartial)
+	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
+
+	// Weather partial (HTMX polling)
+	mux.HandleFunc("GET /partials/weather", s.templateHandler.WeatherPartial)
+
+	// User selection partials
+	mux.HandleFunc("POST /partials/user/select/{id}", s.templateHandler.SetActiveUser)
+	mux.HandleFunc("GET /partials/user/pin-challenge/{id}", s.templateHandler.UserPINChallenge)
+	mux.HandleFunc("POST /partials/user/verify-pin/{id}", s.templateHandler.VerifyPINAndSetUser)
+
+	// Family member partials (HTMX)
 	mux.HandleFunc("GET /partials/family-members", s.templateHandler.FamilyMemberList)
 	mux.HandleFunc("GET /partials/family-members/{id}/edit", s.templateHandler.FamilyMemberEditForm)
 	mux.HandleFunc("POST /partials/family-members", s.templateHandler.FamilyMemberCreate)

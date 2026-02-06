@@ -59,9 +59,11 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.2: Dashboard Shell & Navigation
+### Milestone 1.2: Dashboard Shell & Navigation ✅
 
 **Goal:** The main touchscreen interface — a dashboard layout that will host all the widgets, plus navigation between sections.
+
+**Status:** Complete
 
 #### Tasks
 

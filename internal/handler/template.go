@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"log"
@@ -9,53 +10,272 @@ import (
 	"strings"
 
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/weather"
 	"golang.org/x/crypto/bcrypt"
 )
 
+const activeUserCookie = "gamwich_active_user"
+
 type TemplateHandler struct {
-	store     *store.FamilyMemberStore
-	templates *template.Template
+	store      *store.FamilyMemberStore
+	weatherSvc *weather.Service
+	templates  *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, w *weather.Service) *TemplateHandler {
 	tmpl := template.Must(template.ParseGlob("web/templates/*.html"))
 	return &TemplateHandler{
-		store:     s,
-		templates: tmpl,
+		store:      s,
+		weatherSvc: w,
+		templates:  tmpl,
 	}
 }
 
+// buildDashboardData assembles the common data map for layout rendering.
+func (h *TemplateHandler) buildDashboardData(r *http.Request, section string) (map[string]any, error) {
+	members, err := h.store.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load members: %w", err)
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+
+	data := map[string]any{
+		"Title":         "Gamwich",
+		"Members":       members,
+		"ActiveUserID":  activeUserID,
+		"ActiveSection": section,
+		"Weather":       h.weatherSvc.GetWeather(),
+	}
+	return data, nil
+}
+
+// activeUserFromCookie reads and parses the active user ID from the cookie.
+func (h *TemplateHandler) activeUserFromCookie(r *http.Request) int64 {
+	c, err := r.Cookie(activeUserCookie)
+	if err != nil {
+		return 0
+	}
+	id, err := strconv.ParseInt(c.Value, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// renderSection pre-renders a named template to a buffer and returns it as template.HTML.
+func (h *TemplateHandler) renderSection(name string, data any) (template.HTML, error) {
+	var buf bytes.Buffer
+	if err := h.templates.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", fmt.Errorf("render section %q: %w", name, err)
+	}
+	return template.HTML(buf.String()), nil
+}
+
+// Dashboard renders the main dashboard page with the home section.
 func (h *TemplateHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 
-	members, err := h.store.List()
+	data, err := h.buildDashboardData(r, "dashboard")
 	if err != nil {
 		http.Error(w, "failed to load data", http.StatusInternalServerError)
 		return
 	}
 
-	data := map[string]any{
-		"Title":   "Gamwich",
-		"Members": members,
+	content, err := h.renderSection("dashboard-content", data)
+	if err != nil {
+		log.Printf("render dashboard content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
 	}
+	data["Content"] = content
+
 	h.render(w, "layout.html", data)
 }
 
-func (h *TemplateHandler) FamilyMembers(w http.ResponseWriter, r *http.Request) {
-	members, err := h.store.List()
+// SectionPage returns a handler that renders the full layout with the given section active.
+func (h *TemplateHandler) SectionPage(section string) http.HandlerFunc {
+	templateName := section + "-content"
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := h.buildDashboardData(r, section)
+		if err != nil {
+			http.Error(w, "failed to load data", http.StatusInternalServerError)
+			return
+		}
+
+		content, err := h.renderSection(templateName, data)
+		if err != nil {
+			log.Printf("render %s content: %v", section, err)
+			http.Error(w, "template error", http.StatusInternalServerError)
+			return
+		}
+		data["Content"] = content
+
+		h.render(w, "layout.html", data)
+	}
+}
+
+// DashboardPartial renders only the dashboard section content for HTMX swap.
+func (h *TemplateHandler) DashboardPartial(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "dashboard")
 	if err != nil {
-		http.Error(w, "failed to load family members", http.StatusInternalServerError)
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "dashboard-content", data)
+}
+
+// CalendarPartial renders the calendar placeholder for HTMX swap.
+func (h *TemplateHandler) CalendarPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "calendar-content", nil)
+}
+
+// ChoresPartial renders the chores placeholder for HTMX swap.
+func (h *TemplateHandler) ChoresPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "chores-content", nil)
+}
+
+// GroceryPartial renders the grocery placeholder for HTMX swap.
+func (h *TemplateHandler) GroceryPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "grocery-content", nil)
+}
+
+// SettingsPartial renders the settings section for HTMX swap.
+func (h *TemplateHandler) SettingsPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "settings-content", nil)
+}
+
+// WeatherPartial renders the weather widget for HTMX polling refresh.
+func (h *TemplateHandler) WeatherPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "weather-widget", h.weatherSvc.GetWeather())
+}
+
+// SetActiveUser sets the active user cookie for non-PIN members.
+func (h *TemplateHandler) SetActiveUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 
-	data := map[string]any{
-		"Title":   "Family Members — Gamwich",
-		"Members": members,
+	member, err := h.store.GetByID(id)
+	if err != nil || member == nil {
+		http.Error(w, "member not found", http.StatusNotFound)
+		return
 	}
-	h.render(w, "family_members.html", data)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     activeUserCookie,
+		Value:    strconv.FormatInt(id, 10),
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60, // 30 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	members, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to load members", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderPartial(w, "user-select-bar", map[string]any{
+		"Members":      members,
+		"ActiveUserID": id,
+	})
+}
+
+// UserPINChallenge renders the PIN challenge template into the modal body.
+func (h *TemplateHandler) UserPINChallenge(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	member, err := h.store.GetByID(id)
+	if err != nil || member == nil {
+		http.Error(w, "member not found", http.StatusNotFound)
+		return
+	}
+
+	h.renderPartial(w, "pin-challenge", member)
+}
+
+// VerifyPINAndSetUser verifies the PIN and sets the active user cookie on success.
+func (h *TemplateHandler) VerifyPINAndSetUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	pin := r.FormValue("pin")
+
+	hash, err := h.store.GetPINHash(id)
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(pin)); err != nil {
+		member, _ := h.store.GetByID(id)
+		h.renderToast(w, "error", "Incorrect PIN")
+		h.renderPartial(w, "pin-challenge", member)
+		return
+	}
+
+	// PIN verified — set cookie and close modal.
+	http.SetCookie(w, &http.Cookie{
+		Name:     activeUserCookie,
+		Value:    strconv.FormatInt(id, 10),
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Close the modal via HX-Trigger header.
+	w.Header().Set("HX-Trigger", "closeModal")
+
+	members, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to load members", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Switched user")
+	h.renderPartial(w, "user-select-bar", map[string]any{
+		"Members":      members,
+		"ActiveUserID": id,
+	})
+}
+
+// FamilyMembers renders the family members management page inside the dashboard layout.
+func (h *TemplateHandler) FamilyMembers(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "settings")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	content, err := h.renderSection("family-members-content", data)
+	if err != nil {
+		log.Printf("render family members content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
 }
 
 func (h *TemplateHandler) FamilyMemberList(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +328,7 @@ func (h *TemplateHandler) FamilyMemberCreate(w http.ResponseWriter, r *http.Requ
 	}
 
 	if avatarEmoji == "" {
-		avatarEmoji = "😀"
+		avatarEmoji = "\xf0\x9f\x98\x80"
 	}
 
 	exists, err := h.store.NameExists(name, 0)

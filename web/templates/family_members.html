@@ -1,84 +1,51 @@
-{{define "family_members.html"}}
-<!DOCTYPE html>
-<html lang="en" data-theme="garden">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
-    <style>
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator { display: inline; }
-        .htmx-request.htmx-indicator { display: inline; }
-    </style>
-</head>
-<body class="min-h-screen bg-base-200">
-    <div class="navbar bg-base-100 shadow-md">
-        <div class="flex-1">
-            <a href="/" class="btn btn-ghost text-xl">🏠 Gamwich</a>
-        </div>
-        <div class="flex-none">
-            <ul class="menu menu-horizontal px-1">
-                <li><a href="/settings/family" class="btn btn-ghost font-bold">👨‍👩‍👧‍👦 Family</a></li>
-            </ul>
+{{define "family-members-content"}}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">Family Members</h1>
+
+    <!-- Add Member Form -->
+    <div class="card bg-base-100 shadow-md mb-6">
+        <div class="card-body">
+            <h2 class="card-title">Add Family Member</h2>
+            <form hx-post="/partials/family-members"
+                  hx-target="#member-list"
+                  hx-swap="innerHTML"
+                  hx-on::after-request="if(event.detail.successful) this.reset()"
+                  class="flex flex-wrap gap-4 items-end">
+                <div class="form-control flex-1 min-w-[200px]">
+                    <label class="label"><span class="label-text">Name</span></label>
+                    <input type="text" name="name" placeholder="Enter name" class="input input-bordered input-lg" required />
+                </div>
+                <div class="form-control w-24">
+                    <label class="label"><span class="label-text">Color</span></label>
+                    <input type="color" name="color" value="#3B82F6" class="input input-bordered input-lg h-12 w-full p-1 cursor-pointer" />
+                </div>
+                <div class="form-control w-32">
+                    <label class="label"><span class="label-text">Emoji</span></label>
+                    <select name="avatar_emoji" class="select select-bordered select-lg">
+                        <option value="😀">😀</option>
+                        <option value="😎">😎</option>
+                        <option value="🥰">🥰</option>
+                        <option value="🤓">🤓</option>
+                        <option value="👨">👨</option>
+                        <option value="👩">👩</option>
+                        <option value="👦">👦</option>
+                        <option value="👧">👧</option>
+                        <option value="🧑">🧑</option>
+                        <option value="👶">👶</option>
+                        <option value="🐶">🐶</option>
+                        <option value="🐱">🐱</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg">Add Member</button>
+            </form>
         </div>
     </div>
 
-    <main class="container mx-auto p-4 max-w-4xl">
-        <h1 class="text-3xl font-bold mb-6">Family Members</h1>
-
-        <!-- Add Member Form -->
-        <div class="card bg-base-100 shadow-md mb-6">
-            <div class="card-body">
-                <h2 class="card-title">Add Family Member</h2>
-                <form hx-post="/partials/family-members"
-                      hx-target="#member-list"
-                      hx-swap="innerHTML"
-                      hx-on::after-request="if(event.detail.successful) this.reset()"
-                      class="flex flex-wrap gap-4 items-end">
-                    <div class="form-control flex-1 min-w-[200px]">
-                        <label class="label"><span class="label-text">Name</span></label>
-                        <input type="text" name="name" placeholder="Enter name" class="input input-bordered input-lg" required />
-                    </div>
-                    <div class="form-control w-24">
-                        <label class="label"><span class="label-text">Color</span></label>
-                        <input type="color" name="color" value="#3B82F6" class="input input-bordered input-lg h-12 w-full p-1 cursor-pointer" />
-                    </div>
-                    <div class="form-control w-32">
-                        <label class="label"><span class="label-text">Emoji</span></label>
-                        <select name="avatar_emoji" class="select select-bordered select-lg">
-                            <option value="😀">😀</option>
-                            <option value="😎">😎</option>
-                            <option value="🥰">🥰</option>
-                            <option value="🤓">🤓</option>
-                            <option value="👨">👨</option>
-                            <option value="👩">👩</option>
-                            <option value="👦">👦</option>
-                            <option value="👧">👧</option>
-                            <option value="🧑">🧑</option>
-                            <option value="👶">👶</option>
-                            <option value="🐶">🐶</option>
-                            <option value="🐱">🐱</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-lg">Add Member</button>
-                </form>
-            </div>
-        </div>
-
-        <!-- Member List -->
-        <div id="member-list">
-            {{template "member-list" .}}
-        </div>
-    </main>
-
-    <!-- Global toast container -->
-    <div id="toast-container" class="toast toast-top toast-end z-50"></div>
-</body>
-</html>
+    <!-- Member List -->
+    <div id="member-list">
+        {{template "member-list" .}}
+    </div>
+</div>
 {{end}}
 
 {{define "member-list"}}

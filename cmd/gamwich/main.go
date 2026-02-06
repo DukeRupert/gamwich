@@ -12,6 +12,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/server"
+	"github.com/dukerupert/gamwich/internal/weather"
 )
 
 func main() {
@@ -31,7 +32,17 @@ func main() {
 	}
 	defer db.Close()
 
-	srv := server.New(db)
+	weatherCfg := weather.Config{
+		Latitude:        os.Getenv("GAMWICH_WEATHER_LAT"),
+		Longitude:       os.Getenv("GAMWICH_WEATHER_LON"),
+		TemperatureUnit: os.Getenv("GAMWICH_WEATHER_UNITS"),
+	}
+	if weatherCfg.TemperatureUnit == "" {
+		weatherCfg.TemperatureUnit = "fahrenheit"
+	}
+	weatherSvc := weather.NewService(weatherCfg)
+
+	srv := server.New(db, weatherSvc)
 
 	httpServer := &http.Server{
 		Addr:         ":" + port,

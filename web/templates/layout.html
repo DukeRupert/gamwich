@@ -2,7 +2,7 @@
 <html lang="en" data-theme="garden">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>{{.Title}}</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,35 +14,136 @@
         .htmx-request.htmx-indicator { display: inline; }
     </style>
 </head>
-<body class="min-h-screen bg-base-200">
-    <div class="navbar bg-base-100 shadow-md">
-        <div class="flex-1">
-            <a href="/" class="btn btn-ghost text-xl">🏠 Gamwich</a>
+<body class="h-screen flex flex-col bg-base-200 overflow-hidden"
+      x-data="dashboardApp()"
+      x-init="startClock()">
+
+    <!-- Top Status Bar -->
+    <header class="bg-base-100 shadow-md px-4 py-2 flex items-center justify-between flex-shrink-0">
+        <!-- Date & Clock -->
+        <div class="flex items-center gap-3">
+            <div class="text-lg font-bold" x-text="currentDate"></div>
+            <div class="text-lg font-mono tabular-nums" x-text="currentTime"></div>
         </div>
-        <div class="flex-none">
-            <ul class="menu menu-horizontal px-1">
-                <li><a href="/settings/family" class="btn btn-ghost">👨‍👩‍👧‍👦 Family</a></li>
-            </ul>
+
+        <!-- Weather Widget -->
+        <div id="weather-widget">
+            {{template "weather-widget" .Weather}}
         </div>
+
+        <!-- User Select Bar -->
+        <div id="user-select-bar">
+            {{template "user-select-bar" .}}
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="main-content" class="flex-1 overflow-y-auto p-4">
+        {{.Content}}
+    </main>
+
+    <!-- Bottom Navigation -->
+    <div class="btm-nav btm-nav-lg bg-base-100 border-t border-base-300 flex-shrink-0">
+        <button class="transition-colors"
+                :class="activeSection === 'dashboard' ? 'active text-primary' : ''"
+                hx-get="/partials/dashboard"
+                hx-target="#main-content"
+                hx-push-url="/"
+                @click="activeSection = 'dashboard'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span class="btm-nav-label">Home</span>
+        </button>
+        <button class="transition-colors"
+                :class="activeSection === 'calendar' ? 'active text-primary' : ''"
+                hx-get="/partials/calendar"
+                hx-target="#main-content"
+                hx-push-url="/calendar"
+                @click="activeSection = 'calendar'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span class="btm-nav-label">Calendar</span>
+        </button>
+        <button class="transition-colors"
+                :class="activeSection === 'chores' ? 'active text-primary' : ''"
+                hx-get="/partials/chores"
+                hx-target="#main-content"
+                hx-push-url="/chores"
+                @click="activeSection = 'chores'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            <span class="btm-nav-label">Chores</span>
+        </button>
+        <button class="transition-colors"
+                :class="activeSection === 'grocery' ? 'active text-primary' : ''"
+                hx-get="/partials/grocery"
+                hx-target="#main-content"
+                hx-push-url="/grocery"
+                @click="activeSection = 'grocery'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+            </svg>
+            <span class="btm-nav-label">Grocery</span>
+        </button>
+        <button class="transition-colors"
+                :class="activeSection === 'settings' ? 'active text-primary' : ''"
+                hx-get="/partials/settings"
+                hx-target="#main-content"
+                hx-push-url="/settings"
+                @click="activeSection = 'settings'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="btm-nav-label">Settings</span>
+        </button>
     </div>
 
-    <main class="container mx-auto p-4 max-w-4xl">
-        {{template "content" .}}
-    </main>
+    <!-- PIN Challenge Modal -->
+    <dialog id="pin-modal" class="modal">
+        <div id="pin-modal-body" class="modal-box">
+            <!-- PIN challenge content loaded here via HTMX -->
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
 
     <!-- Global toast container -->
     <div id="toast-container" class="toast toast-top toast-end z-50"></div>
+
+    <script>
+    document.addEventListener('closeModal', function() {
+        document.getElementById('pin-modal').close();
+    });
+
+    function dashboardApp() {
+        return {
+            activeSection: '{{.ActiveSection}}',
+            currentDate: '',
+            currentTime: '',
+            startClock() {
+                this.updateClock();
+                setInterval(() => this.updateClock(), 1000);
+            },
+            updateClock() {
+                const now = new Date();
+                this.currentDate = now.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric'
+                });
+                this.currentTime = now.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            }
+        }
+    }
+    </script>
 </body>
 </html>
-
-{{define "content"}}
-<div class="hero min-h-[60vh]">
-    <div class="hero-content text-center">
-        <div class="max-w-md">
-            <h1 class="text-5xl font-bold">Welcome to Gamwich</h1>
-            <p class="py-6 text-lg">Your family's digital refrigerator door. Manage calendars, chores, groceries, and more — all from one screen.</p>
-            <a href="/settings/family" class="btn btn-primary btn-lg">Get Started — Add Family Members</a>
-        </div>
-    </div>
-</div>
-{{end}}
