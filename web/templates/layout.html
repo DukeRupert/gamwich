@@ -1,5 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="garden">
+<html lang="en">
+<script>
+(function() {
+    var t = localStorage.getItem('gamwich_theme') || 'garden';
+    document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -19,8 +25,71 @@
         .htmx-request .htmx-indicator { display: inline; }
         .htmx-request.htmx-indicator { display: inline; }
         .night-mode { filter: brightness(0.15); transition: filter 1s ease; }
+
+        /* Custom gamwich theme — Shire-inspired palette */
+        [data-theme="gamwich"] {
+            --p: 0.45 0.12 145;    /* moss green primary */
+            --pf: 0.38 0.12 145;
+            --pc: 0.98 0.01 145;
+            --s: 0.65 0.12 70;     /* warm amber secondary */
+            --sf: 0.58 0.12 70;
+            --sc: 0.20 0.02 70;
+            --a: 0.50 0.08 50;     /* earthy brown accent */
+            --af: 0.43 0.08 50;
+            --ac: 0.98 0.01 50;
+            --n: 0.40 0.03 60;     /* warm gray-brown neutral */
+            --nf: 0.33 0.03 60;
+            --nc: 0.95 0.01 80;
+            --b1: 0.95 0.02 85;    /* cream/parchment base */
+            --b2: 0.90 0.03 85;
+            --b3: 0.85 0.03 80;
+            --bc: 0.25 0.03 60;
+            --su: 0.55 0.14 145;   /* success green */
+            --suc: 0.98 0.01 145;
+            --wa: 0.70 0.14 70;    /* warning amber */
+            --wac: 0.20 0.02 70;
+            --er: 0.55 0.15 25;    /* error red */
+            --erc: 0.98 0.01 25;
+            --in: 0.55 0.10 240;   /* info blue */
+            --inc: 0.98 0.01 240;
+            --rounded-box: 0.75rem;
+            --rounded-btn: 0.5rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.5rem;
+        }
+
+        /* View transition crossfades */
+        ::view-transition-old(root) { animation: vt-fade-out 100ms ease-out; }
+        ::view-transition-new(root) { animation: vt-fade-in 100ms ease-in; }
+        @keyframes vt-fade-out { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Chore completion animation */
+        .chore-card-completing {
+            animation: chore-fade 0.4s ease-out forwards;
+        }
+        @keyframes chore-fade {
+            to { opacity: 0.5; background-color: oklch(var(--su) / 0.1); }
+        }
+
+        /* List item slide-in for HTMX swaps */
+        .htmx-added {
+            animation: slide-in 0.2s ease-out;
+        }
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             * { transition-duration: 0.01ms !important; }
+            ::view-transition-old(root),
+            ::view-transition-new(root) { animation: none; }
+            .chore-card-completing { animation: none; }
+            .htmx-added { animation: none; }
         }
     </style>
 </head>
@@ -92,6 +161,7 @@
                 :class="activeSection === 'dashboard' ? 'active text-primary' : ''"
                 hx-get="/partials/dashboard"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/"
                 @click="activeSection = 'dashboard'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -103,6 +173,7 @@
                 :class="activeSection === 'calendar' ? 'active text-primary' : ''"
                 hx-get="/partials/calendar"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/calendar"
                 @click="activeSection = 'calendar'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -114,6 +185,7 @@
                 :class="activeSection === 'chores' ? 'active text-primary' : ''"
                 hx-get="/partials/chores"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/chores"
                 @click="activeSection = 'chores'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -125,6 +197,7 @@
                 :class="activeSection === 'grocery' ? 'active text-primary' : ''"
                 hx-get="/partials/grocery"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/grocery"
                 @click="activeSection = 'grocery'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -136,6 +209,7 @@
                 :class="activeSection === 'notes' ? 'active text-primary' : ''"
                 hx-get="/partials/notes"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/notes"
                 @click="activeSection = 'notes'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -147,6 +221,7 @@
                 :class="activeSection === 'settings' ? 'active text-primary' : ''"
                 hx-get="/partials/settings"
                 hx-target="#main-content"
+                hx-swap="innerHTML transition:true"
                 hx-push-url="/settings"
                 @click="activeSection = 'settings'">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -200,6 +275,12 @@
             currentDate: '',
             currentTime: '',
 
+            // Theme state
+            themeMode: '{{with index .ThemeSettings "theme_mode"}}{{.}}{{else}}manual{{end}}',
+            themeSelected: '{{with index .ThemeSettings "theme_selected"}}{{.}}{{else}}garden{{end}}',
+            themeLight: '{{with index .ThemeSettings "theme_light"}}{{.}}{{else}}garden{{end}}',
+            themeDark: '{{with index .ThemeSettings "theme_dark"}}{{.}}{{else}}forest{{end}}',
+
             // Kiosk state
             isIdle: false,
             isNightMode: false,
@@ -227,6 +308,34 @@
                 this.$watch('activeSection', val => {
                     document.body.dataset.activeSection = val;
                 });
+                this.initTheme();
+            },
+
+            // --- Theme methods ---
+
+            initTheme() {
+                if (this.themeMode === 'system') {
+                    var self = this;
+                    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+                    mq.addEventListener('change', function() { self.applyTheme(); });
+                }
+                this.applyTheme();
+            },
+
+            applyTheme() {
+                var theme;
+                if (this.themeMode === 'manual') {
+                    theme = this.themeSelected;
+                } else if (this.themeMode === 'system') {
+                    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    theme = prefersDark ? this.themeDark : this.themeLight;
+                } else if (this.themeMode === 'quiet-hours') {
+                    theme = this.isNightMode ? this.themeDark : this.themeLight;
+                } else {
+                    theme = this.themeSelected || 'garden';
+                }
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('gamwich_theme', theme);
             },
 
             startClock() {
@@ -326,6 +435,10 @@
                 } else {
                     // Overnight range (e.g., 22:00 - 06:00)
                     this.isNightMode = currentMinutes >= startMinutes || currentMinutes < endMinutes;
+                }
+
+                if (this.themeMode === 'quiet-hours') {
+                    this.applyTheme();
                 }
             },
 

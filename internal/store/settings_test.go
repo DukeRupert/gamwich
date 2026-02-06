@@ -106,9 +106,9 @@ func TestSettingsGetAll(t *testing.T) {
 		t.Fatalf("get all: %v", err)
 	}
 
-	// Should have at least the 8 seed settings (5 kiosk + 3 weather)
-	if len(all) < 8 {
-		t.Fatalf("expected at least 8 settings, got %d", len(all))
+	// Should have at least the 12 seed settings (5 kiosk + 3 weather + 4 theme)
+	if len(all) < 12 {
+		t.Fatalf("expected at least 12 settings, got %d", len(all))
 	}
 
 	if all["idle_timeout_minutes"] != "5" {
@@ -183,6 +183,55 @@ func TestSettingsGetWeatherSettings(t *testing.T) {
 
 	if _, ok := weather["non_weather_key"]; ok {
 		t.Error("non-weather key should not be in weather settings")
+	}
+}
+
+func TestSettingsThemeSeedData(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	settings, err := ss.GetThemeSettings()
+	if err != nil {
+		t.Fatalf("get theme settings: %v", err)
+	}
+
+	expected := map[string]string{
+		"theme_mode":     "manual",
+		"theme_selected": "garden",
+		"theme_light":    "garden",
+		"theme_dark":     "forest",
+	}
+
+	for key, want := range expected {
+		got, ok := settings[key]
+		if !ok {
+			t.Errorf("missing theme setting %q", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("setting %q = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestSettingsGetThemeSettings(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	// Add a non-theme setting
+	if err := ss.Set("non_theme_key", "value"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	theme, err := ss.GetThemeSettings()
+	if err != nil {
+		t.Fatalf("get theme: %v", err)
+	}
+
+	if len(theme) != 4 {
+		t.Fatalf("expected 4 theme settings, got %d", len(theme))
+	}
+
+	if _, ok := theme["non_theme_key"]; ok {
+		t.Error("non-theme key should not be in theme settings")
 	}
 }
 

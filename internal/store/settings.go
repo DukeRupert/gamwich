@@ -20,6 +20,13 @@ var weatherKeys = []string{
 	"weather_units",
 }
 
+var themeKeys = []string{
+	"theme_mode",
+	"theme_selected",
+	"theme_light",
+	"theme_dark",
+}
+
 type SettingsStore struct {
 	db *sql.DB
 }
@@ -95,6 +102,22 @@ func (s *SettingsStore) GetWeatherSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get weather setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetThemeSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range themeKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get theme setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

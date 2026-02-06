@@ -159,6 +159,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PUT /partials/settings/kiosk", s.templateHandler.KioskSettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/weather", s.templateHandler.WeatherSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/weather", s.templateHandler.WeatherSettingsUpdate)
+	mux.HandleFunc("GET /partials/settings/theme", s.templateHandler.ThemeSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/theme", s.templateHandler.ThemeSettingsUpdate)
 	mux.HandleFunc("GET /partials/idle/next-event", s.templateHandler.NextUpcomingEventPartial)
 
 	// Calendar view partials

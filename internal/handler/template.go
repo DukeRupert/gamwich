@@ -71,6 +71,7 @@ func (h *TemplateHandler) buildDashboardData(r *http.Request, section string) (m
 	activeUserID := h.activeUserFromCookie(r)
 
 	kioskSettings, _ := h.settingsStore.GetKioskSettings()
+	themeSettings, _ := h.settingsStore.GetThemeSettings()
 
 	data := map[string]any{
 		"Title":          "Gamwich",
@@ -79,6 +80,7 @@ func (h *TemplateHandler) buildDashboardData(r *http.Request, section string) (m
 		"ActiveSection":  section,
 		"Weather":        h.weatherSvc.GetWeather(),
 		"KioskSettings":  kioskSettings,
+		"ThemeSettings":  themeSettings,
 	}
 	return data, nil
 }
@@ -2510,6 +2512,79 @@ func (h *TemplateHandler) WeatherSettingsUpdate(w http.ResponseWriter, r *http.R
 
 	h.renderToast(w, "success", "Weather settings saved")
 	h.renderPartial(w, "weather-settings-form", updated)
+}
+
+// ThemeSettingsPartial renders the theme settings form for HTMX swap.
+func (h *TemplateHandler) ThemeSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsStore.GetThemeSettings()
+	if err != nil {
+		log.Printf("get theme settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "theme-settings-form", settings)
+}
+
+// ThemeSettingsUpdate handles PUT form submission for theme settings.
+func (h *TemplateHandler) ThemeSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	mode := r.FormValue("theme_mode")
+	validModes := map[string]bool{"manual": true, "system": true, "quiet-hours": true}
+	if !validModes[mode] {
+		h.renderToast(w, "error", "Invalid theme mode")
+		return
+	}
+
+	validThemes := map[string]bool{"garden": true, "forest": true, "cupcake": true, "dracula": true, "gamwich": true}
+
+	selected := r.FormValue("theme_selected")
+	if selected != "" && !validThemes[selected] {
+		h.renderToast(w, "error", "Invalid theme selection")
+		return
+	}
+
+	light := r.FormValue("theme_light")
+	if light != "" && !validThemes[light] {
+		h.renderToast(w, "error", "Invalid light theme selection")
+		return
+	}
+
+	dark := r.FormValue("theme_dark")
+	if dark != "" && !validThemes[dark] {
+		h.renderToast(w, "error", "Invalid dark theme selection")
+		return
+	}
+
+	settings := map[string]string{
+		"theme_mode":     mode,
+		"theme_selected": selected,
+		"theme_light":    light,
+		"theme_dark":     dark,
+	}
+
+	for key, value := range settings {
+		if err := h.settingsStore.Set(key, value); err != nil {
+			log.Printf("set setting %q: %v", key, err)
+			h.renderToast(w, "error", "Failed to save settings")
+			return
+		}
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	updated, err := h.settingsStore.GetThemeSettings()
+	if err != nil {
+		log.Printf("get theme settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Theme settings saved")
+	h.renderPartial(w, "theme-settings-form", updated)
 }
 
 // NextUpcomingEventPartial renders the next upcoming event for the idle screen.

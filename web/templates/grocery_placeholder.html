@@ -85,7 +85,8 @@
            class="checkbox checkbox-lg"
            hx-post="/partials/grocery/items/{{.ID}}/check"
            hx-target="#grocery-list-content"
-           hx-swap="innerHTML" />
+           hx-swap="innerHTML"
+           hx-on::before-request="this.closest('.flex').style.opacity='0.5'" />
     <div class="flex-1 min-w-0">
         <div class="font-medium">{{.Name}}</div>
         {{if or .Quantity .Notes}}
