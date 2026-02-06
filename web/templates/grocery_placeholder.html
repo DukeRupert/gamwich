@@ -1,14 +1,218 @@
 {{define "grocery-content"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-3xl font-bold mb-6">Grocery List</h1>
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-3xl font-bold">Grocery List</h1>
+        {{if .UncheckedCount}}
+        <div class="badge badge-primary badge-lg">{{.UncheckedCount}} items</div>
+        {{end}}
+    </div>
+
+    <!-- Quick-Add Bar -->
+    <form class="flex gap-2 mb-4"
+          hx-post="/partials/grocery/items"
+          hx-target="#grocery-list-content"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()">
+        <input type="text" name="name"
+               class="input input-bordered input-lg flex-1"
+               placeholder="Add an item..."
+               autocomplete="off"
+               required />
+        <button type="submit" class="btn btn-primary btn-lg">Add</button>
+    </form>
+
+    <!-- Grocery Item List -->
+    <div id="grocery-list-content">
+        {{template "grocery-item-list" .}}
+    </div>
+</div>
+
+<!-- Grocery Edit Modal -->
+<dialog id="grocery-modal" class="modal">
+    <div id="grocery-modal-body" class="modal-box max-w-lg">
+        <!-- Edit form loaded here via HTMX -->
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+{{end}}
+
+{{define "grocery-item-list"}}
+<div class="space-y-3">
+    {{if and (not .CategoryGroups) (not .CheckedItems)}}
     <div class="card bg-base-100 shadow-md">
-        <div class="card-body items-center text-center py-16">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/30 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div class="card-body items-center text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/30 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
             </svg>
-            <h2 class="text-2xl font-bold text-base-content/60">Grocery & Shopping Lists</h2>
-            <p class="text-base-content/40 mt-2">Coming soon — categorized items, multiple lists, and quick-add.</p>
+            <p class="text-base-content/60">No items on your list. Add something above!</p>
+        </div>
+    </div>
+    {{else}}
+    <!-- Unchecked items by category -->
+    {{range .CategoryGroups}}
+    {{template "grocery-category-group" .}}
+    {{end}}
+
+    <!-- Checked items section -->
+    {{if .CheckedItems}}
+    {{template "grocery-checked-section" .}}
+    {{end}}
+    {{end}}
+</div>
+{{end}}
+
+{{define "grocery-category-group"}}
+<div class="collapse collapse-open bg-base-100 shadow-md">
+    <div class="collapse-title flex items-center gap-2 py-3 min-h-0">
+        <span class="font-bold text-lg">{{.CategoryName}}</span>
+        <span class="badge badge-sm badge-ghost">{{len .Items}}</span>
+    </div>
+    <div class="collapse-content px-4 pb-2">
+        <div class="space-y-1">
+            {{range .Items}}
+            {{template "grocery-item" .}}
+            {{end}}
         </div>
     </div>
 </div>
+{{end}}
+
+{{define "grocery-item"}}
+<div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200/50">
+    <input type="checkbox"
+           class="checkbox checkbox-lg"
+           hx-post="/partials/grocery/items/{{.ID}}/check"
+           hx-target="#grocery-list-content"
+           hx-swap="innerHTML" />
+    <div class="flex-1 min-w-0">
+        <div class="font-medium">{{.Name}}</div>
+        {{if or .Quantity .Notes}}
+        <div class="text-sm text-base-content/60">
+            {{if .Quantity}}{{.Quantity}}{{if .Unit}} {{.Unit}}{{end}}{{end}}
+            {{if and .Quantity .Notes}} — {{end}}
+            {{if .Notes}}{{.Notes}}{{end}}
+        </div>
+        {{end}}
+    </div>
+    <button class="btn btn-ghost btn-sm btn-square"
+            hx-get="/partials/grocery/items/{{.ID}}/edit"
+            hx-target="#grocery-modal-body"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('grocery-modal').showModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+    </button>
+    <button class="btn btn-ghost btn-sm btn-square text-error"
+            hx-delete="/partials/grocery/items/{{.ID}}"
+            hx-target="#grocery-list-content"
+            hx-swap="innerHTML"
+            hx-confirm="Remove this item?">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+{{end}}
+
+{{define "grocery-checked-item"}}
+<div class="flex items-center gap-3 p-2 rounded-lg opacity-40">
+    <input type="checkbox" checked
+           class="checkbox checkbox-lg checkbox-success"
+           hx-post="/partials/grocery/items/{{.ID}}/check"
+           hx-target="#grocery-list-content"
+           hx-swap="innerHTML" />
+    <div class="flex-1 min-w-0 line-through text-base-content/50">
+        <div class="font-medium">{{.Name}}</div>
+        {{if or .Quantity .Notes}}
+        <div class="text-sm">
+            {{if .Quantity}}{{.Quantity}}{{if .Unit}} {{.Unit}}{{end}}{{end}}
+            {{if and .Quantity .Notes}} — {{end}}
+            {{if .Notes}}{{.Notes}}{{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "grocery-checked-section"}}
+<div class="collapse collapse-arrow bg-base-100 shadow-md opacity-70">
+    <input type="checkbox" />
+    <div class="collapse-title flex items-center gap-2 py-3 min-h-0">
+        <span class="font-bold">Checked</span>
+        <span class="badge badge-sm badge-ghost">{{len .CheckedItems}}</span>
+        <div class="flex-1"></div>
+        <button class="btn btn-sm btn-ghost text-error z-10"
+                hx-post="/partials/grocery/clear-checked"
+                hx-target="#grocery-list-content"
+                hx-swap="innerHTML"
+                hx-confirm="Remove all checked items?"
+                onclick="event.stopPropagation()">Clear checked</button>
+    </div>
+    <div class="collapse-content px-4 pb-2">
+        <div class="space-y-1">
+            {{range .CheckedItems}}
+            {{template "grocery-checked-item" .}}
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "grocery-edit-form"}}
+<div>
+    <h3 class="text-xl font-bold mb-4">Edit Item</h3>
+    <form hx-put="/partials/grocery/items/{{.ID}}"
+          hx-target="#grocery-list-content"
+          hx-swap="innerHTML">
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Name</span></label>
+            <input type="text" name="name" class="input input-bordered" value="{{.Name}}" required />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="form-control">
+                <label class="label"><span class="label-text">Quantity</span></label>
+                <input type="text" name="quantity" class="input input-bordered" value="{{.Quantity}}" placeholder="e.g. 2" />
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Unit</span></label>
+                <input type="text" name="unit" class="input input-bordered" value="{{.Unit}}" placeholder="e.g. lbs" />
+            </div>
+        </div>
+
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Notes</span></label>
+            <input type="text" name="notes" class="input input-bordered" value="{{.Notes}}" placeholder="Optional notes" />
+        </div>
+
+        <div class="form-control mb-4">
+            <label class="label"><span class="label-text">Category</span></label>
+            <select name="category" class="select select-bordered">
+                {{range .Categories}}
+                <option value="{{.Name}}" {{if eq .Name $.Category}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div class="modal-action">
+            <button type="button" class="btn" onclick="document.getElementById('grocery-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "grocery-summary-widget"}}
+{{if and .GrocerySummary (gt (index .GrocerySummary "UncheckedCount") 0)}}
+<div class="flex items-center gap-2">
+    <span class="badge badge-primary">{{index .GrocerySummary "UncheckedCount"}}</span>
+    <span class="text-base-content/60">item{{if gt (index .GrocerySummary "UncheckedCount") 1}}s{{end}} on list</span>
+</div>
+{{else}}
+<p class="text-base-content/60">No items on list</p>
+{{end}}
 {{end}}

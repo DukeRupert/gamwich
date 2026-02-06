@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/chore"
+	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
@@ -22,24 +23,26 @@ import (
 const activeUserCookie = "gamwich_active_user"
 
 type TemplateHandler struct {
-	store      *store.FamilyMemberStore
-	eventStore *store.EventStore
-	choreStore *store.ChoreStore
-	weatherSvc *weather.Service
-	templates  *template.Template
+	store        *store.FamilyMemberStore
+	eventStore   *store.EventStore
+	choreStore   *store.ChoreStore
+	groceryStore *store.GroceryStore
+	weatherSvc   *weather.Service
+	templates    *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, w *weather.Service) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, w *weather.Service) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseGlob("web/templates/*.html"))
 	return &TemplateHandler{
-		store:      s,
-		eventStore: es,
-		choreStore: cs,
-		weatherSvc: w,
-		templates:  tmpl,
+		store:        s,
+		eventStore:   es,
+		choreStore:   cs,
+		groceryStore: gs,
+		weatherSvc:   w,
+		templates:    tmpl,
 	}
 }
 
@@ -100,6 +103,9 @@ func (h *TemplateHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	choreSummary, _ := h.buildChoreSummaryData()
 	data["ChoreSummary"] = choreSummary
 
+	grocerySummary, _ := h.buildGrocerySummaryData()
+	data["GrocerySummary"] = grocerySummary
+
 	content, err := h.renderSection("dashboard-content", data)
 	if err != nil {
 		log.Printf("render dashboard content: %v", err)
@@ -143,6 +149,9 @@ func (h *TemplateHandler) DashboardPartial(w http.ResponseWriter, r *http.Reques
 
 	choreSummary, _ := h.buildChoreSummaryData()
 	data["ChoreSummary"] = choreSummary
+
+	grocerySummary, _ := h.buildGrocerySummaryData()
+	data["GrocerySummary"] = grocerySummary
 
 	h.renderPartial(w, "dashboard-content", data)
 }
@@ -1382,9 +1391,337 @@ func statusPriority(s chore.Status) int {
 	}
 }
 
-// GroceryPartial renders the grocery placeholder for HTMX swap.
+// GroceryPage renders the full grocery page inside the dashboard layout.
+func (h *TemplateHandler) GroceryPage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "grocery")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		log.Printf("build grocery list: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+
+	content, err := h.renderSection("grocery-content", groceryData)
+	if err != nil {
+		log.Printf("render grocery content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
+}
+
+// GroceryPartial renders the grocery section for HTMX swap.
 func (h *TemplateHandler) GroceryPartial(w http.ResponseWriter, r *http.Request) {
-	h.renderPartial(w, "grocery-content", nil)
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		log.Printf("build grocery list: %v", err)
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-content", groceryData)
+}
+
+// GroceryItemList renders the item list partial.
+func (h *TemplateHandler) GroceryItemList(w http.ResponseWriter, r *http.Request) {
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// GroceryItemAdd handles POST quick-add form submission.
+func (h *TemplateHandler) GroceryItemAdd(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.renderToast(w, "error", "Item name is required")
+		return
+	}
+
+	list, err := h.groceryStore.GetDefaultList()
+	if err != nil || list == nil {
+		http.Error(w, "failed to get list", http.StatusInternalServerError)
+		return
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+	var addedBy *int64
+	if activeUserID > 0 {
+		addedBy = &activeUserID
+	}
+
+	cat := grocery.Categorize(name)
+
+	if _, err := h.groceryStore.CreateItem(list.ID, name, "", "", "", cat, addedBy); err != nil {
+		log.Printf("create grocery item: %v", err)
+		http.Error(w, "failed to create item", http.StatusInternalServerError)
+		return
+	}
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// GroceryItemToggle handles POST to toggle checked state.
+func (h *TemplateHandler) GroceryItemToggle(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+	var checkedBy *int64
+	if activeUserID > 0 {
+		checkedBy = &activeUserID
+	}
+
+	if _, err := h.groceryStore.ToggleChecked(id, checkedBy); err != nil {
+		log.Printf("toggle grocery item: %v", err)
+		http.Error(w, "failed to toggle item", http.StatusInternalServerError)
+		return
+	}
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// GroceryItemDelete handles DELETE for a grocery item.
+func (h *TemplateHandler) GroceryItemDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.groceryStore.DeleteItem(id); err != nil {
+		http.Error(w, "failed to delete item", http.StatusInternalServerError)
+		return
+	}
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// GroceryClearChecked handles POST to clear all checked items.
+func (h *TemplateHandler) GroceryClearChecked(w http.ResponseWriter, r *http.Request) {
+	list, err := h.groceryStore.GetDefaultList()
+	if err != nil || list == nil {
+		http.Error(w, "failed to get list", http.StatusInternalServerError)
+		return
+	}
+
+	count, err := h.groceryStore.ClearChecked(list.ID)
+	if err != nil {
+		http.Error(w, "failed to clear checked", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", fmt.Sprintf("Cleared %d item(s)", count))
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// GroceryItemEditForm renders the edit form in the modal.
+func (h *TemplateHandler) GroceryItemEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	item, err := h.groceryStore.GetItemByID(id)
+	if err != nil || item == nil {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
+
+	categories, _ := h.groceryStore.ListCategories()
+
+	h.renderPartial(w, "grocery-edit-form", map[string]any{
+		"ID":         item.ID,
+		"Name":       item.Name,
+		"Quantity":   item.Quantity,
+		"Unit":       item.Unit,
+		"Notes":      item.Notes,
+		"Category":   item.Category,
+		"Categories": categories,
+	})
+}
+
+// GroceryItemUpdate handles PUT form submission to update a grocery item.
+func (h *TemplateHandler) GroceryItemUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.renderToast(w, "error", "Item name is required")
+		return
+	}
+
+	quantity := r.FormValue("quantity")
+	unit := r.FormValue("unit")
+	notes := r.FormValue("notes")
+	category := r.FormValue("category")
+
+	if category == "" {
+		category = "Other"
+	}
+
+	if _, err := h.groceryStore.UpdateItem(id, name, quantity, unit, notes, category); err != nil {
+		log.Printf("update grocery item: %v", err)
+		http.Error(w, "failed to update item", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeGroceryModal")
+	h.renderToast(w, "success", "Item updated")
+
+	groceryData, err := h.buildGroceryListData()
+	if err != nil {
+		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "grocery-item-list", groceryData)
+}
+
+// --- Grocery helper methods ---
+
+type categoryGroup struct {
+	CategoryName string
+	Items        []model.GroceryItem
+}
+
+func (h *TemplateHandler) buildGroceryListData() (map[string]any, error) {
+	list, err := h.groceryStore.GetDefaultList()
+	if err != nil {
+		return nil, fmt.Errorf("get default list: %w", err)
+	}
+	if list == nil {
+		return map[string]any{
+			"List":           nil,
+			"CategoryGroups": nil,
+			"CheckedItems":   nil,
+			"UncheckedCount": 0,
+			"Categories":     nil,
+		}, nil
+	}
+
+	items, err := h.groceryStore.ListItemsByList(list.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list items: %w", err)
+	}
+
+	categories, err := h.groceryStore.ListCategories()
+	if err != nil {
+		return nil, fmt.Errorf("list categories: %w", err)
+	}
+
+	// Build category sort order map
+	catOrder := make(map[string]int)
+	for _, c := range categories {
+		catOrder[c.Name] = c.SortOrder
+	}
+
+	// Separate unchecked and checked
+	var unchecked, checked []model.GroceryItem
+	for _, item := range items {
+		if item.Checked {
+			checked = append(checked, item)
+		} else {
+			unchecked = append(unchecked, item)
+		}
+	}
+
+	// Group unchecked by category
+	groupMap := make(map[string][]model.GroceryItem)
+	for _, item := range unchecked {
+		groupMap[item.Category] = append(groupMap[item.Category], item)
+	}
+
+	// Sort groups by category sort order
+	var groups []categoryGroup
+	for _, cat := range categories {
+		if items, ok := groupMap[cat.Name]; ok {
+			groups = append(groups, categoryGroup{
+				CategoryName: cat.Name,
+				Items:        items,
+			})
+		}
+	}
+	// Add any categories not in seed data
+	for catName, items := range groupMap {
+		if _, ok := catOrder[catName]; !ok {
+			groups = append(groups, categoryGroup{
+				CategoryName: catName,
+				Items:        items,
+			})
+		}
+	}
+
+	return map[string]any{
+		"List":           list,
+		"CategoryGroups": groups,
+		"CheckedItems":   checked,
+		"UncheckedCount": len(unchecked),
+		"Categories":     categories,
+	}, nil
+}
+
+func (h *TemplateHandler) buildGrocerySummaryData() (map[string]any, error) {
+	list, err := h.groceryStore.GetDefaultList()
+	if err != nil {
+		return nil, fmt.Errorf("get default list: %w", err)
+	}
+	if list == nil {
+		return map[string]any{"UncheckedCount": 0}, nil
+	}
+
+	count, err := h.groceryStore.CountUnchecked(list.ID)
+	if err != nil {
+		return nil, fmt.Errorf("count unchecked: %w", err)
+	}
+
+	return map[string]any{"UncheckedCount": count}, nil
 }
 
 // SettingsPartial renders the settings section for HTMX swap.

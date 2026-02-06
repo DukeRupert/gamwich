@@ -126,6 +126,10 @@
         var modal = document.getElementById('chore-modal');
         if (modal) modal.close();
     });
+    document.addEventListener('closeGroceryModal', function() {
+        var modal = document.getElementById('grocery-modal');
+        if (modal) modal.close();
+    });
 
     function dashboardApp() {
         return {

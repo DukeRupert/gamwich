@@ -50,7 +50,7 @@
                     </svg>
                     Grocery List
                 </h2>
-                <p class="text-base-content/60">No items on list</p>
+                {{template "grocery-summary-widget" .}}
                 <div class="card-actions justify-end mt-2">
                     <button class="btn btn-sm btn-ghost"
                             hx-get="/partials/grocery"

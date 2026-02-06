@@ -14,6 +14,7 @@ type Server struct {
 	familyMemberH   *handler.FamilyMemberHandler
 	calendarEventH  *handler.CalendarEventHandler
 	choreH          *handler.ChoreHandler
+	groceryH        *handler.GroceryHandler
 	templateHandler *handler.TemplateHandler
 }
 
@@ -21,13 +22,15 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	familyMemberStore := store.NewFamilyMemberStore(db)
 	eventStore := store.NewEventStore(db)
 	choreStore := store.NewChoreStore(db)
+	groceryStore := store.NewGroceryStore(db)
 
 	return &Server{
 		db:              db,
 		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore),
 		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore),
 		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, weatherSvc),
+		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, weatherSvc),
 	}
 }
 
@@ -61,12 +64,20 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/chores/{id}/complete", s.choreH.Complete)
 	mux.HandleFunc("DELETE /api/chores/{id}/completions/{completion_id}", s.choreH.UndoComplete)
 
+	// Grocery API routes
+	mux.HandleFunc("POST /api/grocery-lists/{list_id}/items", s.groceryH.CreateItem)
+	mux.HandleFunc("GET /api/grocery-lists/{list_id}/items", s.groceryH.ListItems)
+	mux.HandleFunc("PUT /api/grocery-lists/{list_id}/items/{id}", s.groceryH.UpdateItem)
+	mux.HandleFunc("DELETE /api/grocery-lists/{list_id}/items/{id}", s.groceryH.DeleteItem)
+	mux.HandleFunc("POST /api/grocery-lists/{list_id}/items/{id}/check", s.groceryH.ToggleChecked)
+	mux.HandleFunc("POST /api/grocery-lists/{list_id}/clear-checked", s.groceryH.ClearChecked)
+
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
 	mux.HandleFunc("GET /calendar", s.templateHandler.CalendarPage)
 	mux.HandleFunc("GET /chores", s.templateHandler.ChoresPage)
 	mux.HandleFunc("GET /chores/manage", s.templateHandler.ChoreManagePage)
-	mux.HandleFunc("GET /grocery", s.templateHandler.SectionPage("grocery"))
+	mux.HandleFunc("GET /grocery", s.templateHandler.GroceryPage)
 	mux.HandleFunc("GET /settings", s.templateHandler.SectionPage("settings"))
 	mux.HandleFunc("GET /settings/family", s.templateHandler.FamilyMembers)
 
@@ -75,6 +86,13 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /partials/calendar", s.templateHandler.CalendarPartial)
 	mux.HandleFunc("GET /partials/chores", s.templateHandler.ChoresPartial)
 	mux.HandleFunc("GET /partials/grocery", s.templateHandler.GroceryPartial)
+	mux.HandleFunc("GET /partials/grocery/items", s.templateHandler.GroceryItemList)
+	mux.HandleFunc("POST /partials/grocery/items", s.templateHandler.GroceryItemAdd)
+	mux.HandleFunc("POST /partials/grocery/items/{id}/check", s.templateHandler.GroceryItemToggle)
+	mux.HandleFunc("DELETE /partials/grocery/items/{id}", s.templateHandler.GroceryItemDelete)
+	mux.HandleFunc("POST /partials/grocery/clear-checked", s.templateHandler.GroceryClearChecked)
+	mux.HandleFunc("GET /partials/grocery/items/{id}/edit", s.templateHandler.GroceryItemEditForm)
+	mux.HandleFunc("PUT /partials/grocery/items/{id}", s.templateHandler.GroceryItemUpdate)
 	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
 
 	// Calendar view partials
