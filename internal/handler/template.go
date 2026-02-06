@@ -241,6 +241,254 @@ func (h *TemplateHandler) CalendarEventDetail(w http.ResponseWriter, r *http.Req
 	h.renderPartial(w, "calendar-event-detail", data)
 }
 
+// CalendarEventNewForm renders the event creation form in the modal.
+func (h *TemplateHandler) CalendarEventNewForm(w http.ResponseWriter, r *http.Request) {
+	date := h.parseCalendarDate(r)
+	hourStr := r.URL.Query().Get("hour")
+	hour := 9 // default
+	if h, err := strconv.Atoi(hourStr); err == nil && h >= 0 && h <= 23 {
+		hour = h
+	}
+
+	members, _ := h.store.List()
+
+	data := map[string]any{
+		"DateYear":    date.Year(),
+		"DateMonth":   int(date.Month()),
+		"DateDay":     date.Day(),
+		"StartHour":   hour,
+		"StartMinute": 0,
+		"EndHour":     hour + 1,
+		"EndMinute":   0,
+		"Members":     members,
+	}
+	h.renderPartial(w, "event-form", data)
+}
+
+// CalendarEventCreate handles POST form submission to create an event.
+func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	dateStr := r.FormValue("date")
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		h.renderToast(w, "error", "Invalid date")
+		return
+	}
+
+	allDay := r.FormValue("all_day") == "1"
+	description := r.FormValue("description")
+	location := r.FormValue("location")
+
+	var startTime, endTime time.Time
+	if allDay {
+		startTime = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		endTime = startTime.Add(24 * time.Hour)
+	} else {
+		startHour, _ := strconv.Atoi(r.FormValue("start_hour"))
+		startMinute, _ := strconv.Atoi(r.FormValue("start_minute"))
+		endHour, _ := strconv.Atoi(r.FormValue("end_hour"))
+		endMinute, _ := strconv.Atoi(r.FormValue("end_minute"))
+
+		startTime = time.Date(date.Year(), date.Month(), date.Day(), startHour, startMinute, 0, 0, time.UTC)
+		endTime = time.Date(date.Year(), date.Month(), date.Day(), endHour, endMinute, 0, 0, time.UTC)
+
+		if !startTime.Before(endTime) {
+			h.renderToast(w, "error", "Start time must be before end time")
+			return
+		}
+	}
+
+	var familyMemberID *int64
+	if memberStr := r.FormValue("family_member_id"); memberStr != "" && memberStr != "0" {
+		id, err := strconv.ParseInt(memberStr, 10, 64)
+		if err == nil {
+			familyMemberID = &id
+		}
+	}
+
+	if _, err := h.eventStore.Create(title, description, startTime, endTime, allDay, familyMemberID, location); err != nil {
+		log.Printf("create event: %v", err)
+		http.Error(w, "failed to create event", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeEventModal")
+
+	// Re-render the current day view
+	data, err := h.buildDayViewData(date)
+	if err != nil {
+		http.Error(w, "failed to load events", http.StatusInternalServerError)
+		return
+	}
+	h.renderToast(w, "success", "Event created")
+	h.renderPartial(w, "calendar-day-view", data)
+}
+
+// CalendarEventEditForm renders the edit form for an event.
+func (h *TemplateHandler) CalendarEventEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	event, err := h.eventStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "failed to get event", http.StatusInternalServerError)
+		return
+	}
+	if event == nil {
+		http.Error(w, "event not found", http.StatusNotFound)
+		return
+	}
+
+	members, _ := h.store.List()
+
+	var familyMemberID int64
+	if event.FamilyMemberID != nil {
+		familyMemberID = *event.FamilyMemberID
+	}
+
+	data := map[string]any{
+		"ID":             event.ID,
+		"Title":          event.Title,
+		"Description":    event.Description,
+		"Location":       event.Location,
+		"AllDay":         event.AllDay,
+		"DateYear":       event.StartTime.Year(),
+		"DateMonth":      int(event.StartTime.Month()),
+		"DateDay":        event.StartTime.Day(),
+		"StartHour":      event.StartTime.Hour(),
+		"StartMinute":    event.StartTime.Minute(),
+		"EndHour":        event.EndTime.Hour(),
+		"EndMinute":      event.EndTime.Minute(),
+		"FamilyMemberID": familyMemberID,
+		"Members":        members,
+	}
+
+	h.renderPartial(w, "event-edit-form", data)
+}
+
+// CalendarEventUpdate handles PUT form submission to update an event.
+func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	dateStr := r.FormValue("date")
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		h.renderToast(w, "error", "Invalid date")
+		return
+	}
+
+	allDay := r.FormValue("all_day") == "1"
+	description := r.FormValue("description")
+	location := r.FormValue("location")
+
+	var startTime, endTime time.Time
+	if allDay {
+		startTime = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		endTime = startTime.Add(24 * time.Hour)
+	} else {
+		startHour, _ := strconv.Atoi(r.FormValue("start_hour"))
+		startMinute, _ := strconv.Atoi(r.FormValue("start_minute"))
+		endHour, _ := strconv.Atoi(r.FormValue("end_hour"))
+		endMinute, _ := strconv.Atoi(r.FormValue("end_minute"))
+
+		startTime = time.Date(date.Year(), date.Month(), date.Day(), startHour, startMinute, 0, 0, time.UTC)
+		endTime = time.Date(date.Year(), date.Month(), date.Day(), endHour, endMinute, 0, 0, time.UTC)
+
+		if !startTime.Before(endTime) {
+			h.renderToast(w, "error", "Start time must be before end time")
+			return
+		}
+	}
+
+	var familyMemberID *int64
+	if memberStr := r.FormValue("family_member_id"); memberStr != "" && memberStr != "0" {
+		mid, err := strconv.ParseInt(memberStr, 10, 64)
+		if err == nil {
+			familyMemberID = &mid
+		}
+	}
+
+	if _, err := h.eventStore.Update(id, title, description, startTime, endTime, allDay, familyMemberID, location); err != nil {
+		log.Printf("update event: %v", err)
+		http.Error(w, "failed to update event", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeEventModal")
+
+	data, err := h.buildDayViewData(date)
+	if err != nil {
+		http.Error(w, "failed to load events", http.StatusInternalServerError)
+		return
+	}
+	h.renderToast(w, "success", "Event updated")
+	h.renderPartial(w, "calendar-day-view", data)
+}
+
+// CalendarEventDeleteForm handles DELETE from the event detail modal.
+func (h *TemplateHandler) CalendarEventDeleteForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	event, err := h.eventStore.GetByID(id)
+	if err != nil {
+		http.Error(w, "failed to get event", http.StatusInternalServerError)
+		return
+	}
+	if event == nil {
+		http.Error(w, "event not found", http.StatusNotFound)
+		return
+	}
+
+	date := event.StartTime
+
+	if err := h.eventStore.Delete(id); err != nil {
+		http.Error(w, "failed to delete event", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeEventModal")
+
+	data, err := h.buildDayViewData(date)
+	if err != nil {
+		http.Error(w, "failed to load events", http.StatusInternalServerError)
+		return
+	}
+	h.renderToast(w, "success", "Event deleted")
+	h.renderPartial(w, "calendar-day-view", data)
+}
+
 // ChoresPartial renders the chores placeholder for HTMX swap.
 func (h *TemplateHandler) ChoresPartial(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "chores-content", nil)

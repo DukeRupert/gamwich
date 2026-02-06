@@ -68,7 +68,12 @@ func (s *Server) Router() http.Handler {
 	// Calendar view partials
 	mux.HandleFunc("GET /partials/calendar/day", s.templateHandler.CalendarDayPartial)
 	mux.HandleFunc("GET /partials/calendar/week", s.templateHandler.CalendarWeekPartial)
+	mux.HandleFunc("GET /partials/calendar/events/new", s.templateHandler.CalendarEventNewForm)
 	mux.HandleFunc("GET /partials/calendar/events/{id}", s.templateHandler.CalendarEventDetail)
+	mux.HandleFunc("GET /partials/calendar/events/{id}/edit", s.templateHandler.CalendarEventEditForm)
+	mux.HandleFunc("POST /partials/calendar/events", s.templateHandler.CalendarEventCreate)
+	mux.HandleFunc("PUT /partials/calendar/events/{id}", s.templateHandler.CalendarEventUpdate)
+	mux.HandleFunc("DELETE /partials/calendar/events/{id}", s.templateHandler.CalendarEventDeleteForm)
 
 	// Weather partial (HTMX polling)
 	mux.HandleFunc("GET /partials/weather", s.templateHandler.WeatherPartial)

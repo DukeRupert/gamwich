@@ -189,6 +189,488 @@
 </div>
 {{end}}
 
+{{define "event-form"}}
+<div x-data="eventForm()">
+    <h3 class="text-xl font-bold mb-4">New Event</h3>
+
+    <form hx-post="/partials/calendar/events"
+          hx-target="#calendar-view-content"
+          @submit="prepareSubmit()">
+
+        <!-- Title -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Title</span></label>
+            <input type="text" name="title" x-model="title"
+                   class="input input-bordered input-lg w-full"
+                   placeholder="Event title" required autofocus>
+        </div>
+
+        <!-- All Day Toggle -->
+        <div class="form-control mb-3">
+            <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" x-model="allDay" class="toggle toggle-primary toggle-lg">
+                <span class="label-text font-medium">All day</span>
+            </label>
+        </div>
+
+        <!-- Date Picker -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Date</span></label>
+            <div class="flex items-center gap-2">
+                <button type="button" class="btn btn-ghost btn-sm" @click="prevDay()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <div class="flex-1 text-center text-lg font-medium" x-text="formattedDate"></div>
+                <button type="button" class="btn btn-ghost btn-sm" @click="nextDay()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Time Pickers (hidden when all-day) -->
+        <div x-show="!allDay" class="grid grid-cols-2 gap-4 mb-3">
+            <!-- Start Time -->
+            <div class="form-control">
+                <label class="label"><span class="label-text font-medium">Start</span></label>
+                <div class="flex items-center gap-1 justify-center">
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('start', 1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(startHour12).padStart(2,' ')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('start', -1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <span class="text-2xl font-mono">:</span>
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('start', 15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(startMinute).padStart(2,'0')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('start', -15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline ml-1 w-12" @click="toggleAmPm('start')" x-text="startAmPm"></button>
+                </div>
+            </div>
+
+            <!-- End Time -->
+            <div class="form-control">
+                <label class="label"><span class="label-text font-medium">End</span></label>
+                <div class="flex items-center gap-1 justify-center">
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('end', 1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(endHour12).padStart(2,' ')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('end', -1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <span class="text-2xl font-mono">:</span>
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('end', 15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(endMinute).padStart(2,'0')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('end', -15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline ml-1 w-12" @click="toggleAmPm('end')" x-text="endAmPm"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Family Member Selector -->
+        {{if .Members}}
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Assigned to</span></label>
+            <div class="flex flex-wrap gap-2">
+                <button type="button"
+                        class="avatar placeholder cursor-pointer transition-all"
+                        :class="selectedMember === 0 ? 'ring ring-primary ring-offset-2' : 'opacity-50'"
+                        @click="selectedMember = 0">
+                    <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center text-sm">
+                        --
+                    </div>
+                </button>
+                {{range .Members}}
+                <button type="button"
+                        class="avatar placeholder cursor-pointer transition-all"
+                        :class="selectedMember === {{.ID}} ? 'ring ring-primary ring-offset-2' : 'opacity-50'"
+                        @click="selectedMember = {{.ID}}">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                         style="background-color: {{.Color}}20; border: 2px solid {{.Color}}">
+                        {{.AvatarEmoji}}
+                    </div>
+                </button>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Location -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Location</span></label>
+            <input type="text" name="location" x-model="location"
+                   class="input input-bordered w-full"
+                   placeholder="Add location">
+        </div>
+
+        <!-- Description -->
+        <div class="form-control mb-4">
+            <label class="label"><span class="label-text font-medium">Description</span></label>
+            <textarea name="description" x-model="description"
+                      class="textarea textarea-bordered w-full" rows="2"
+                      placeholder="Add description"></textarea>
+        </div>
+
+        <!-- Hidden fields populated by Alpine -->
+        <input type="hidden" name="date" :value="dateStr">
+        <input type="hidden" name="start_hour" :value="get24Hour('start')">
+        <input type="hidden" name="start_minute" :value="startMinute">
+        <input type="hidden" name="end_hour" :value="get24Hour('end')">
+        <input type="hidden" name="end_minute" :value="endMinute">
+        <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
+        <input type="hidden" name="family_member_id" :value="selectedMember || ''">
+
+        <!-- Actions -->
+        <div class="flex justify-end gap-2">
+            <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('event-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary"
+                    onclick="document.getElementById('event-modal').close()">Create Event</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function eventForm() {
+    return {
+        title: '',
+        allDay: false,
+        dateYear: {{.DateYear}},
+        dateMonth: {{.DateMonth}},
+        dateDay: {{.DateDay}},
+        startHour: {{.StartHour}},
+        startMinute: {{.StartMinute}},
+        startAmPm: {{.StartHour}} >= 12 ? 'PM' : 'AM',
+        endHour: {{.EndHour}},
+        endMinute: {{.EndMinute}},
+        endAmPm: {{.EndHour}} >= 12 ? 'PM' : 'AM',
+        selectedMember: 0,
+        location: '',
+        description: '',
+
+        get startHour12() {
+            let h = this.startHour % 12;
+            return h === 0 ? 12 : h;
+        },
+        get endHour12() {
+            let h = this.endHour % 12;
+            return h === 0 ? 12 : h;
+        },
+        get formattedDate() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        },
+        get dateStr() {
+            return `${this.dateYear}-${String(this.dateMonth).padStart(2,'0')}-${String(this.dateDay).padStart(2,'0')}`;
+        },
+        prevDay() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            d.setDate(d.getDate() - 1);
+            this.dateYear = d.getFullYear();
+            this.dateMonth = d.getMonth() + 1;
+            this.dateDay = d.getDate();
+        },
+        nextDay() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            d.setDate(d.getDate() + 1);
+            this.dateYear = d.getFullYear();
+            this.dateMonth = d.getMonth() + 1;
+            this.dateDay = d.getDate();
+        },
+        adjustHour(which, delta) {
+            if (which === 'start') {
+                this.startHour = (this.startHour + delta + 24) % 24;
+                this.startAmPm = this.startHour >= 12 ? 'PM' : 'AM';
+            } else {
+                this.endHour = (this.endHour + delta + 24) % 24;
+                this.endAmPm = this.endHour >= 12 ? 'PM' : 'AM';
+            }
+        },
+        adjustMinute(which, delta) {
+            if (which === 'start') {
+                this.startMinute = (this.startMinute + delta + 60) % 60;
+            } else {
+                this.endMinute = (this.endMinute + delta + 60) % 60;
+            }
+        },
+        toggleAmPm(which) {
+            if (which === 'start') {
+                this.startHour = (this.startHour + 12) % 24;
+                this.startAmPm = this.startHour >= 12 ? 'PM' : 'AM';
+            } else {
+                this.endHour = (this.endHour + 12) % 24;
+                this.endAmPm = this.endHour >= 12 ? 'PM' : 'AM';
+            }
+        },
+        get24Hour(which) {
+            return which === 'start' ? this.startHour : this.endHour;
+        },
+        prepareSubmit() {
+            // Values are already in hidden fields via Alpine binding
+        }
+    };
+}
+</script>
+{{end}}
+
+{{define "event-edit-form"}}
+<div x-data="eventEditForm()">
+    <h3 class="text-xl font-bold mb-4">Edit Event</h3>
+
+    <form hx-put="/partials/calendar/events/{{.ID}}"
+          hx-target="#calendar-view-content"
+          @submit="prepareSubmit()">
+
+        <!-- Title -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Title</span></label>
+            <input type="text" name="title" x-model="title"
+                   class="input input-bordered input-lg w-full"
+                   placeholder="Event title" required autofocus>
+        </div>
+
+        <!-- All Day Toggle -->
+        <div class="form-control mb-3">
+            <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" x-model="allDay" class="toggle toggle-primary toggle-lg">
+                <span class="label-text font-medium">All day</span>
+            </label>
+        </div>
+
+        <!-- Date Picker -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Date</span></label>
+            <div class="flex items-center gap-2">
+                <button type="button" class="btn btn-ghost btn-sm" @click="prevDay()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <div class="flex-1 text-center text-lg font-medium" x-text="formattedDate"></div>
+                <button type="button" class="btn btn-ghost btn-sm" @click="nextDay()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Time Pickers (hidden when all-day) -->
+        <div x-show="!allDay" class="grid grid-cols-2 gap-4 mb-3">
+            <!-- Start Time -->
+            <div class="form-control">
+                <label class="label"><span class="label-text font-medium">Start</span></label>
+                <div class="flex items-center gap-1 justify-center">
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('start', 1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(startHour12).padStart(2,' ')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('start', -1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <span class="text-2xl font-mono">:</span>
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('start', 15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(startMinute).padStart(2,'0')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('start', -15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline ml-1 w-12" @click="toggleAmPm('start')" x-text="startAmPm"></button>
+                </div>
+            </div>
+
+            <!-- End Time -->
+            <div class="form-control">
+                <label class="label"><span class="label-text font-medium">End</span></label>
+                <div class="flex items-center gap-1 justify-center">
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('end', 1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(endHour12).padStart(2,' ')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustHour('end', -1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <span class="text-2xl font-mono">:</span>
+                    <div class="flex flex-col items-center">
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('end', 15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <span class="text-2xl font-mono tabular-nums w-8 text-center" x-text="String(endMinute).padStart(2,'0')"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" @click="adjustMinute('end', -15)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline ml-1 w-12" @click="toggleAmPm('end')" x-text="endAmPm"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Family Member Selector -->
+        {{if .Members}}
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Assigned to</span></label>
+            <div class="flex flex-wrap gap-2">
+                <button type="button"
+                        class="avatar placeholder cursor-pointer transition-all"
+                        :class="selectedMember === 0 ? 'ring ring-primary ring-offset-2' : 'opacity-50'"
+                        @click="selectedMember = 0">
+                    <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center text-sm">
+                        --
+                    </div>
+                </button>
+                {{range .Members}}
+                <button type="button"
+                        class="avatar placeholder cursor-pointer transition-all"
+                        :class="selectedMember === {{.ID}} ? 'ring ring-primary ring-offset-2' : 'opacity-50'"
+                        @click="selectedMember = {{.ID}}">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                         style="background-color: {{.Color}}20; border: 2px solid {{.Color}}">
+                        {{.AvatarEmoji}}
+                    </div>
+                </button>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Location -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Location</span></label>
+            <input type="text" name="location" x-model="location"
+                   class="input input-bordered w-full"
+                   placeholder="Add location">
+        </div>
+
+        <!-- Description -->
+        <div class="form-control mb-4">
+            <label class="label"><span class="label-text font-medium">Description</span></label>
+            <textarea name="description" x-model="description"
+                      class="textarea textarea-bordered w-full" rows="2"
+                      placeholder="Add description"></textarea>
+        </div>
+
+        <!-- Hidden fields populated by Alpine -->
+        <input type="hidden" name="date" :value="dateStr">
+        <input type="hidden" name="start_hour" :value="get24Hour('start')">
+        <input type="hidden" name="start_minute" :value="startMinute">
+        <input type="hidden" name="end_hour" :value="get24Hour('end')">
+        <input type="hidden" name="end_minute" :value="endMinute">
+        <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
+        <input type="hidden" name="family_member_id" :value="selectedMember || ''">
+
+        <!-- Actions -->
+        <div class="flex justify-end gap-2">
+            <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('event-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary"
+                    onclick="document.getElementById('event-modal').close()">Save Changes</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function eventEditForm() {
+    return {
+        title: '{{.Title}}',
+        allDay: {{if .AllDay}}true{{else}}false{{end}},
+        dateYear: {{.DateYear}},
+        dateMonth: {{.DateMonth}},
+        dateDay: {{.DateDay}},
+        startHour: {{.StartHour}},
+        startMinute: {{.StartMinute}},
+        startAmPm: {{.StartHour}} >= 12 ? 'PM' : 'AM',
+        endHour: {{.EndHour}},
+        endMinute: {{.EndMinute}},
+        endAmPm: {{.EndHour}} >= 12 ? 'PM' : 'AM',
+        selectedMember: {{if .FamilyMemberID}}{{.FamilyMemberID}}{{else}}0{{end}},
+        location: '{{.Location}}',
+        description: '{{.Description}}',
+
+        get startHour12() {
+            let h = this.startHour % 12;
+            return h === 0 ? 12 : h;
+        },
+        get endHour12() {
+            let h = this.endHour % 12;
+            return h === 0 ? 12 : h;
+        },
+        get formattedDate() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        },
+        get dateStr() {
+            return `${this.dateYear}-${String(this.dateMonth).padStart(2,'0')}-${String(this.dateDay).padStart(2,'0')}`;
+        },
+        prevDay() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            d.setDate(d.getDate() - 1);
+            this.dateYear = d.getFullYear();
+            this.dateMonth = d.getMonth() + 1;
+            this.dateDay = d.getDate();
+        },
+        nextDay() {
+            let d = new Date(this.dateYear, this.dateMonth - 1, this.dateDay);
+            d.setDate(d.getDate() + 1);
+            this.dateYear = d.getFullYear();
+            this.dateMonth = d.getMonth() + 1;
+            this.dateDay = d.getDate();
+        },
+        adjustHour(which, delta) {
+            if (which === 'start') {
+                this.startHour = (this.startHour + delta + 24) % 24;
+                this.startAmPm = this.startHour >= 12 ? 'PM' : 'AM';
+            } else {
+                this.endHour = (this.endHour + delta + 24) % 24;
+                this.endAmPm = this.endHour >= 12 ? 'PM' : 'AM';
+            }
+        },
+        adjustMinute(which, delta) {
+            if (which === 'start') {
+                this.startMinute = (this.startMinute + delta + 60) % 60;
+            } else {
+                this.endMinute = (this.endMinute + delta + 60) % 60;
+            }
+        },
+        toggleAmPm(which) {
+            if (which === 'start') {
+                this.startHour = (this.startHour + 12) % 24;
+                this.startAmPm = this.startHour >= 12 ? 'PM' : 'AM';
+            } else {
+                this.endHour = (this.endHour + 12) % 24;
+                this.endAmPm = this.endHour >= 12 ? 'PM' : 'AM';
+            }
+        },
+        get24Hour(which) {
+            return which === 'start' ? this.startHour : this.endHour;
+        },
+        prepareSubmit() {
+            // Values are already in hidden fields via Alpine binding
+        }
+    };
+}
+</script>
+{{end}}
+
 {{define "calendar-event-detail"}}
 <div>
     <h3 class="text-xl font-bold mb-4">{{.Title}}</h3>
