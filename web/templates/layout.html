@@ -133,6 +133,17 @@
             <span class="btm-nav-label">Grocery</span>
         </button>
         <button class="transition-colors"
+                :class="activeSection === 'notes' ? 'active text-primary' : ''"
+                hx-get="/partials/notes"
+                hx-target="#main-content"
+                hx-push-url="/notes"
+                @click="activeSection = 'notes'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 md:h-6 md:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span class="btm-nav-label">Notes</span>
+        </button>
+        <button class="transition-colors"
                 :class="activeSection === 'settings' ? 'active text-primary' : ''"
                 hx-get="/partials/settings"
                 hx-target="#main-content"
@@ -172,6 +183,14 @@
     });
     document.addEventListener('closeGroceryModal', function() {
         var modal = document.getElementById('grocery-modal');
+        if (modal) modal.close();
+    });
+    document.addEventListener('closeNoteModal', function() {
+        var modal = document.getElementById('note-modal');
+        if (modal) modal.close();
+    });
+    document.addEventListener('closeRewardModal', function() {
+        var modal = document.getElementById('reward-modal');
         if (modal) modal.close();
     });
 
@@ -396,6 +415,20 @@
             } else if (entity === 'grocery_item') {
                 if (section === 'grocery') {
                     refreshSection('grocery');
+                } else if (section === 'dashboard') {
+                    refreshSection('dashboard');
+                }
+            } else if (entity === 'note') {
+                if (section === 'notes') {
+                    refreshSection('notes');
+                } else if (section === 'dashboard') {
+                    refreshSection('dashboard');
+                }
+            } else if (entity === 'reward') {
+                if (section === 'chores') {
+                    refreshSection('chores');
+                } else if (section === 'settings') {
+                    refreshSection('settings');
                 } else if (section === 'dashboard') {
                     refreshSection('dashboard');
                 }

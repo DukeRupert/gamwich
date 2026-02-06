@@ -24,8 +24,9 @@ type Chore struct {
 }
 
 type ChoreCompletion struct {
-	ID          int64     `json:"id"`
-	ChoreID     int64     `json:"chore_id"`
-	CompletedBy *int64    `json:"completed_by"`
-	CompletedAt time.Time `json:"completed_at"`
+	ID           int64     `json:"id"`
+	ChoreID      int64     `json:"chore_id"`
+	CompletedBy  *int64    `json:"completed_by"`
+	PointsEarned int       `json:"points_earned"`
+	CompletedAt  time.Time `json:"completed_at"`
 }

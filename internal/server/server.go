@@ -17,6 +17,8 @@ type Server struct {
 	calendarEventH  *handler.CalendarEventHandler
 	choreH          *handler.ChoreHandler
 	groceryH        *handler.GroceryHandler
+	noteH           *handler.NoteHandler
+	rewardH         *handler.RewardHandler
 	settingsH       *handler.SettingsHandler
 	templateHandler *handler.TemplateHandler
 }
@@ -28,6 +30,8 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	eventStore := store.NewEventStore(db)
 	choreStore := store.NewChoreStore(db)
 	groceryStore := store.NewGroceryStore(db)
+	noteStore := store.NewNoteStore(db)
+	rewardStore := store.NewRewardStore(db)
 	settingsStore := store.NewSettingsStore(db)
 
 	return &Server{
@@ -37,8 +41,10 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub),
 		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub),
 		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
+		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
+		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, settingsStore, weatherSvc, hub),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub),
 	}
 }
 
@@ -80,6 +86,22 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/grocery-lists/{list_id}/items/{id}/check", s.groceryH.ToggleChecked)
 	mux.HandleFunc("POST /api/grocery-lists/{list_id}/clear-checked", s.groceryH.ClearChecked)
 
+	// Notes API routes
+	mux.HandleFunc("POST /api/notes", s.noteH.Create)
+	mux.HandleFunc("GET /api/notes", s.noteH.List)
+	mux.HandleFunc("PUT /api/notes/{id}", s.noteH.Update)
+	mux.HandleFunc("DELETE /api/notes/{id}", s.noteH.Delete)
+	mux.HandleFunc("POST /api/notes/{id}/pin", s.noteH.TogglePinned)
+
+	// Rewards API routes
+	mux.HandleFunc("POST /api/rewards", s.rewardH.Create)
+	mux.HandleFunc("GET /api/rewards", s.rewardH.List)
+	mux.HandleFunc("PUT /api/rewards/{id}", s.rewardH.Update)
+	mux.HandleFunc("DELETE /api/rewards/{id}", s.rewardH.Delete)
+	mux.HandleFunc("POST /api/rewards/{id}/redeem", s.rewardH.Redeem)
+	mux.HandleFunc("GET /api/family-members/{id}/points", s.rewardH.GetPointBalance)
+	mux.HandleFunc("GET /api/leaderboard", s.rewardH.GetLeaderboard)
+
 	// Settings API routes
 	mux.HandleFunc("GET /api/settings/kiosk", s.settingsH.GetKiosk)
 	mux.HandleFunc("PUT /api/settings/kiosk", s.settingsH.UpdateKiosk)
@@ -92,6 +114,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /chores", s.templateHandler.ChoresPage)
 	mux.HandleFunc("GET /chores/manage", s.templateHandler.ChoreManagePage)
 	mux.HandleFunc("GET /grocery", s.templateHandler.GroceryPage)
+	mux.HandleFunc("GET /notes", s.templateHandler.NotesPage)
+	mux.HandleFunc("GET /chores/rewards", s.templateHandler.RewardsPage)
 	mux.HandleFunc("GET /settings", s.templateHandler.SectionPage("settings"))
 	mux.HandleFunc("GET /settings/family", s.templateHandler.FamilyMembers)
 
@@ -107,6 +131,29 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /partials/grocery/clear-checked", s.templateHandler.GroceryClearChecked)
 	mux.HandleFunc("GET /partials/grocery/items/{id}/edit", s.templateHandler.GroceryItemEditForm)
 	mux.HandleFunc("PUT /partials/grocery/items/{id}", s.templateHandler.GroceryItemUpdate)
+	// Notes partials (HTMX)
+	mux.HandleFunc("GET /partials/notes", s.templateHandler.NotesPartial)
+	mux.HandleFunc("GET /partials/notes/list", s.templateHandler.NoteList)
+	mux.HandleFunc("GET /partials/notes/new", s.templateHandler.NoteNewForm)
+	mux.HandleFunc("GET /partials/notes/{id}/edit", s.templateHandler.NoteEditForm)
+	mux.HandleFunc("POST /partials/notes", s.templateHandler.NoteCreate)
+	mux.HandleFunc("PUT /partials/notes/{id}", s.templateHandler.NoteUpdate)
+	mux.HandleFunc("DELETE /partials/notes/{id}", s.templateHandler.NoteDelete)
+	mux.HandleFunc("POST /partials/notes/{id}/pin", s.templateHandler.NoteTogglePin)
+
+	// Rewards partials (HTMX)
+	mux.HandleFunc("GET /partials/rewards", s.templateHandler.RewardsPartial)
+	mux.HandleFunc("GET /partials/rewards/list", s.templateHandler.RewardsList)
+	mux.HandleFunc("POST /partials/rewards/{id}/redeem", s.templateHandler.RewardRedeem)
+
+	// Reward management partials (settings)
+	mux.HandleFunc("GET /partials/settings/rewards", s.templateHandler.RewardManagePartial)
+	mux.HandleFunc("GET /partials/settings/rewards/new", s.templateHandler.RewardNewForm)
+	mux.HandleFunc("GET /partials/settings/rewards/{id}/edit", s.templateHandler.RewardEditForm)
+	mux.HandleFunc("POST /partials/settings/rewards", s.templateHandler.RewardCreate)
+	mux.HandleFunc("PUT /partials/settings/rewards/{id}", s.templateHandler.RewardUpdate)
+	mux.HandleFunc("DELETE /partials/settings/rewards/{id}", s.templateHandler.RewardDelete)
+
 	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
 	mux.HandleFunc("GET /partials/settings/kiosk", s.templateHandler.KioskSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/kiosk", s.templateHandler.KioskSettingsUpdate)

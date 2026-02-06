@@ -1,0 +1,288 @@
+{{define "notes-content"}}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl md:text-3xl font-bold">Notes</h1>
+        {{if .NoteCount}}
+        <div class="badge badge-primary badge-lg">{{.NoteCount}}</div>
+        {{end}}
+    </div>
+
+    <!-- Add Note Button -->
+    <button class="btn btn-primary btn-lg w-full mb-4"
+            hx-get="/partials/notes/new"
+            hx-target="#note-modal-body"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('note-modal').showModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add Note
+    </button>
+
+    <!-- Note List -->
+    <div id="note-list-content">
+        {{template "note-list" .}}
+    </div>
+</div>
+
+<!-- Note Modal -->
+<dialog id="note-modal" class="modal">
+    <div id="note-modal-body" class="modal-box w-[calc(100%-2rem)] max-w-lg">
+        <!-- Form loaded here via HTMX -->
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+{{end}}
+
+{{define "note-list"}}
+<div class="space-y-3">
+    {{if and (not .PinnedNotes) (not .UnpinnedNotes)}}
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body items-center text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/30 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <p class="text-base-content/60">No notes yet. Add one above!</p>
+        </div>
+    </div>
+    {{else}}
+    <!-- Pinned Notes -->
+    {{if .PinnedNotes}}
+    <div class="mb-2">
+        <div class="flex items-center gap-2 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+            </svg>
+            <span class="text-sm font-semibold text-primary uppercase tracking-wide">Pinned</span>
+        </div>
+        <div class="space-y-2">
+            {{range .PinnedNotes}}
+            {{template "note-card" .}}
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
+    <!-- Other Notes -->
+    {{if .UnpinnedNotes}}
+    {{if .PinnedNotes}}
+    <div class="divider text-sm text-base-content/40">Other Notes</div>
+    {{end}}
+    <div class="space-y-2">
+        {{range .UnpinnedNotes}}
+        {{template "note-card" .}}
+        {{end}}
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{end}}
+
+{{define "note-card"}}
+<div class="card bg-base-100 shadow-md border-l-4 {{if eq .Priority "urgent"}}border-error{{else if eq .Priority "fun"}}border-success{{else}}border-info{{end}}">
+    <div class="card-body p-3 sm:p-4">
+        <div class="flex items-start gap-2">
+            <!-- Pin toggle -->
+            <button class="btn btn-ghost btn-xs btn-square flex-shrink-0 mt-0.5"
+                    hx-post="/partials/notes/{{.ID}}/pin"
+                    hx-target="#note-list-content"
+                    hx-swap="innerHTML">
+                {{if .Pinned}}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                </svg>
+                {{else}}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                </svg>
+                {{end}}
+            </button>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h3 class="font-semibold text-base">{{.Title}}</h3>
+                    {{if eq .Priority "urgent"}}
+                    <span class="badge badge-error badge-xs">urgent</span>
+                    {{else if eq .Priority "fun"}}
+                    <span class="badge badge-success badge-xs">fun</span>
+                    {{end}}
+                    {{if .ExpiresAt}}
+                    <span class="badge badge-warning badge-xs">expires {{.ExpiresAt.Format "Jan 2"}}</span>
+                    {{end}}
+                </div>
+                {{if .Body}}
+                <p class="text-sm text-base-content/70 mt-1 line-clamp-3">{{.Body}}</p>
+                {{end}}
+            </div>
+
+            <!-- Edit button -->
+            <button class="btn btn-ghost btn-xs btn-square flex-shrink-0"
+                    hx-get="/partials/notes/{{.ID}}/edit"
+                    hx-target="#note-modal-body"
+                    hx-swap="innerHTML"
+                    onclick="document.getElementById('note-modal').showModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "note-form"}}
+<h3 class="text-lg font-bold mb-4">New Note</h3>
+<form hx-post="/partials/notes"
+      hx-target="#note-list-content"
+      hx-swap="innerHTML"
+      class="space-y-4">
+    <!-- Title -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Title</span></label>
+        <input type="text" name="title"
+               class="input input-bordered w-full"
+               placeholder="Note title..."
+               required />
+    </div>
+
+    <!-- Body -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Body</span></label>
+        <textarea name="body"
+                  class="textarea textarea-bordered w-full h-24"
+                  placeholder="Write your note..."></textarea>
+    </div>
+
+    <!-- Priority -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Priority</span></label>
+        <div class="flex gap-2">
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="urgent" class="radio radio-error radio-sm">
+                <span class="label-text">Urgent</span>
+            </label>
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="normal" class="radio radio-info radio-sm" checked>
+                <span class="label-text">Normal</span>
+            </label>
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="fun" class="radio radio-success radio-sm">
+                <span class="label-text">Fun</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Pin Toggle -->
+    <div class="form-control">
+        <label class="label cursor-pointer">
+            <span class="label-text font-medium">Pin to top</span>
+            <input type="checkbox" name="pinned" class="toggle toggle-primary">
+        </label>
+    </div>
+
+    <!-- Expiry Date -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Expires on (optional)</span></label>
+        <input type="date" name="expires_at"
+               class="input input-bordered w-full">
+    </div>
+
+    <div class="flex gap-2 justify-end">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('note-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Note</button>
+    </div>
+</form>
+{{end}}
+
+{{define "note-edit-form"}}
+<h3 class="text-lg font-bold mb-4">Edit Note</h3>
+<form hx-put="/partials/notes/{{.Note.ID}}"
+      hx-target="#note-list-content"
+      hx-swap="innerHTML"
+      class="space-y-4">
+    <!-- Title -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Title</span></label>
+        <input type="text" name="title"
+               class="input input-bordered w-full"
+               value="{{.Note.Title}}"
+               required />
+    </div>
+
+    <!-- Body -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Body</span></label>
+        <textarea name="body"
+                  class="textarea textarea-bordered w-full h-24">{{.Note.Body}}</textarea>
+    </div>
+
+    <!-- Priority -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Priority</span></label>
+        <div class="flex gap-2">
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="urgent" class="radio radio-error radio-sm" {{if eq .Note.Priority "urgent"}}checked{{end}}>
+                <span class="label-text">Urgent</span>
+            </label>
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="normal" class="radio radio-info radio-sm" {{if eq .Note.Priority "normal"}}checked{{end}}>
+                <span class="label-text">Normal</span>
+            </label>
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="priority" value="fun" class="radio radio-success radio-sm" {{if eq .Note.Priority "fun"}}checked{{end}}>
+                <span class="label-text">Fun</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Pin Toggle -->
+    <div class="form-control">
+        <label class="label cursor-pointer">
+            <span class="label-text font-medium">Pin to top</span>
+            <input type="checkbox" name="pinned" class="toggle toggle-primary" {{if .Note.Pinned}}checked{{end}}>
+        </label>
+    </div>
+
+    <!-- Expiry Date -->
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Expires on (optional)</span></label>
+        <input type="date" name="expires_at"
+               class="input input-bordered w-full"
+               {{if .Note.ExpiresAt}}value="{{.Note.ExpiresAt.Format "2006-01-02"}}"{{end}}>
+    </div>
+
+    <div class="flex gap-2 justify-end">
+        <button type="button" class="btn btn-error btn-outline btn-sm"
+                hx-delete="/partials/notes/{{.Note.ID}}"
+                hx-target="#note-list-content"
+                hx-swap="innerHTML"
+                hx-confirm="Delete this note?">Delete</button>
+        <div class="flex-1"></div>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('note-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+</form>
+{{end}}
+
+{{define "note-summary-widget"}}
+{{with .NoteSummary}}
+{{if .PinnedNotes}}
+<div class="space-y-1 my-2">
+    {{range .PinnedNotes}}
+    <div class="flex items-center gap-2 text-sm">
+        <span class="w-1 h-4 rounded-full flex-shrink-0 {{if eq .Priority "urgent"}}bg-error{{else if eq .Priority "fun"}}bg-success{{else}}bg-info{{end}}"></span>
+        <span class="truncate">{{.Title}}</span>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<p class="text-base-content/60 my-2">No pinned notes</p>
+{{end}}
+{{if .NoteCount}}
+<p class="text-xs text-base-content/40">{{.NoteCount}} total</p>
+{{end}}
+{{end}}
+{{end}}

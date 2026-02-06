@@ -1,0 +1,268 @@
+{{define "rewards-content"}}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl md:text-3xl font-bold">Rewards</h1>
+        <button class="btn btn-ghost btn-sm"
+                hx-get="/partials/chores"
+                hx-target="#main-content"
+                hx-push-url="/chores">Back to Chores</button>
+    </div>
+
+    {{if .UserBalance}}
+    <div class="card bg-primary text-primary-content shadow-md mb-4">
+        <div class="card-body p-4 flex-row items-center justify-between">
+            <div>
+                <div class="text-sm opacity-80">Your Points</div>
+                <div class="text-3xl font-bold">{{.UserBalance.Balance}}</div>
+            </div>
+            <div class="text-right text-sm opacity-70">
+                <div>Earned: {{.UserBalance.TotalEarned}}</div>
+                <div>Spent: {{.UserBalance.TotalSpent}}</div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <!-- Rewards List -->
+    <div id="rewards-list-content">
+        {{template "rewards-list" .}}
+    </div>
+
+    {{if .Balances}}
+    <div class="divider text-sm text-base-content/40 mt-6">Leaderboard</div>
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+            <div class="space-y-3">
+                {{range $i, $b := .Balances}}
+                <div class="flex items-center gap-3">
+                    <div class="text-lg font-bold w-6 text-center {{if eq $i 0}}text-warning{{else}}text-base-content/40{{end}}">
+                        {{add $i 1}}
+                    </div>
+                    <div class="flex-1 font-medium">{{$b.MemberName}}</div>
+                    <div class="badge {{if eq $i 0}}badge-warning{{else}}badge-ghost{{end}}">{{$b.Balance}} pts</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "rewards-list"}}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    {{if not .Rewards}}
+    <div class="col-span-full card bg-base-100 shadow-md">
+        <div class="card-body items-center text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/30 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+            </svg>
+            <p class="text-base-content/60">No rewards available yet.</p>
+            <p class="text-sm text-base-content/40">Rewards can be managed in Settings.</p>
+        </div>
+    </div>
+    {{else}}
+    {{range .Rewards}}
+    <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+            <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-base truncate">{{.Title}}</h3>
+                    {{if .Description}}
+                    <p class="text-sm text-base-content/60 mt-1 line-clamp-2">{{.Description}}</p>
+                    {{end}}
+                </div>
+                <div class="badge badge-warning font-bold flex-shrink-0">{{.PointCost}} pts</div>
+            </div>
+            <div class="card-actions justify-end mt-2">
+                {{if and $.UserBalance (ge $.UserBalance.Balance .PointCost)}}
+                <button class="btn btn-primary btn-sm"
+                        hx-post="/partials/rewards/{{.ID}}/redeem"
+                        hx-target="#rewards-list-content"
+                        hx-swap="innerHTML"
+                        hx-confirm="Redeem '{{.Title}}' for {{.PointCost}} points?">
+                    Redeem
+                </button>
+                {{else}}
+                <button class="btn btn-sm btn-disabled" disabled>
+                    {{if $.UserBalance}}Not enough points{{else}}Select a user{{end}}
+                </button>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{end}}
+
+{{define "leaderboard-widget"}}
+{{with .Leaderboard}}
+{{if and .Enabled .Balances}}
+<div class="space-y-2 my-2">
+    {{range $i, $b := .Balances}}
+    {{if lt $i 3}}
+    <div class="flex items-center gap-2 text-sm">
+        <span class="font-bold w-4 {{if eq $i 0}}text-warning{{else}}text-base-content/40{{end}}">{{add $i 1}}</span>
+        <span class="flex-1 truncate">{{$b.MemberName}}</span>
+        <span class="font-mono text-base-content/60">{{$b.Balance}} pts</span>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{else if not .Enabled}}
+<p class="text-base-content/60 my-2">Leaderboard disabled</p>
+{{else}}
+<p class="text-base-content/60 my-2">No points earned yet</p>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "reward-manage-list"}}
+<div>
+    {{if not .Rewards}}
+    <p class="text-base-content/60 mb-4">No rewards created yet.</p>
+    {{else}}
+    <div class="overflow-x-auto mb-4">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Cost</th>
+                    <th>Active</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Rewards}}
+                <tr>
+                    <td class="font-medium">{{.Title}}</td>
+                    <td>{{.PointCost}} pts</td>
+                    <td>
+                        {{if .Active}}
+                        <span class="badge badge-success badge-xs">Active</span>
+                        {{else}}
+                        <span class="badge badge-ghost badge-xs">Inactive</span>
+                        {{end}}
+                    </td>
+                    <td class="text-right">
+                        <button class="btn btn-ghost btn-xs"
+                                hx-get="/partials/settings/rewards/{{.ID}}/edit"
+                                hx-target="#reward-modal-body"
+                                hx-swap="innerHTML"
+                                onclick="document.getElementById('reward-modal').showModal()">Edit</button>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{end}}
+
+    <button class="btn btn-primary btn-sm w-full"
+            hx-get="/partials/settings/rewards/new"
+            hx-target="#reward-modal-body"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('reward-modal').showModal()">
+        Add Reward
+    </button>
+</div>
+
+<!-- Reward Modal -->
+<dialog id="reward-modal" class="modal">
+    <div id="reward-modal-body" class="modal-box w-[calc(100%-2rem)] max-w-lg">
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+{{end}}
+
+{{define "reward-form"}}
+<h3 class="text-lg font-bold mb-4">New Reward</h3>
+<form hx-post="/partials/settings/rewards"
+      hx-target="#reward-manage-container"
+      hx-swap="innerHTML"
+      class="space-y-4">
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Title</span></label>
+        <input type="text" name="title"
+               class="input input-bordered w-full"
+               placeholder="Reward name..."
+               required />
+    </div>
+
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Description</span></label>
+        <textarea name="description"
+                  class="textarea textarea-bordered w-full h-20"
+                  placeholder="Optional description..."></textarea>
+    </div>
+
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Point Cost</span></label>
+        <input type="number" name="point_cost"
+               class="input input-bordered w-full"
+               value="0" min="0" />
+    </div>
+
+    <div class="form-control">
+        <label class="label cursor-pointer">
+            <span class="label-text font-medium">Active</span>
+            <input type="checkbox" name="active" class="toggle toggle-primary" checked>
+        </label>
+    </div>
+
+    <div class="flex gap-2 justify-end">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('reward-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create</button>
+    </div>
+</form>
+{{end}}
+
+{{define "reward-edit-form"}}
+<h3 class="text-lg font-bold mb-4">Edit Reward</h3>
+<form hx-put="/partials/settings/rewards/{{.Reward.ID}}"
+      hx-target="#reward-manage-container"
+      hx-swap="innerHTML"
+      class="space-y-4">
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Title</span></label>
+        <input type="text" name="title"
+               class="input input-bordered w-full"
+               value="{{.Reward.Title}}"
+               required />
+    </div>
+
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Description</span></label>
+        <textarea name="description"
+                  class="textarea textarea-bordered w-full h-20">{{.Reward.Description}}</textarea>
+    </div>
+
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">Point Cost</span></label>
+        <input type="number" name="point_cost"
+               class="input input-bordered w-full"
+               value="{{.Reward.PointCost}}" min="0" />
+    </div>
+
+    <div class="form-control">
+        <label class="label cursor-pointer">
+            <span class="label-text font-medium">Active</span>
+            <input type="checkbox" name="active" class="toggle toggle-primary" {{if .Reward.Active}}checked{{end}}>
+        </label>
+    </div>
+
+    <div class="flex gap-2 justify-end">
+        <button type="button" class="btn btn-error btn-outline btn-sm"
+                hx-delete="/partials/settings/rewards/{{.Reward.ID}}"
+                hx-target="#reward-manage-container"
+                hx-swap="innerHTML"
+                hx-confirm="Delete this reward?">Delete</button>
+        <div class="flex-1"></div>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('reward-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+</form>
+{{end}}

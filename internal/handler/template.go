@@ -28,13 +28,15 @@ type TemplateHandler struct {
 	eventStore    *store.EventStore
 	choreStore    *store.ChoreStore
 	groceryStore  *store.GroceryStore
+	noteStore     *store.NoteStore
+	rewardStore   *store.RewardStore
 	settingsStore *store.SettingsStore
 	weatherSvc    *weather.Service
 	hub           *websocket.Hub
 	templates     *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
@@ -44,6 +46,8 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		eventStore:    es,
 		choreStore:    cs,
 		groceryStore:  gs,
+		noteStore:     ns,
+		rewardStore:   rs,
 		settingsStore: ss,
 		weatherSvc:    w,
 		hub:           hub,
@@ -120,6 +124,12 @@ func (h *TemplateHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	grocerySummary, _ := h.buildGrocerySummaryData()
 	data["GrocerySummary"] = grocerySummary
 
+	noteSummary, _ := h.buildNoteSummaryData()
+	data["NoteSummary"] = noteSummary
+
+	leaderboard, _ := h.buildLeaderboardData()
+	data["Leaderboard"] = leaderboard
+
 	content, err := h.renderSection("dashboard-content", data)
 	if err != nil {
 		log.Printf("render dashboard content: %v", err)
@@ -166,6 +176,12 @@ func (h *TemplateHandler) DashboardPartial(w http.ResponseWriter, r *http.Reques
 
 	grocerySummary, _ := h.buildGrocerySummaryData()
 	data["GrocerySummary"] = grocerySummary
+
+	noteSummary, _ := h.buildNoteSummaryData()
+	data["NoteSummary"] = noteSummary
+
+	leaderboard, _ := h.buildLeaderboardData()
+	data["Leaderboard"] = leaderboard
 
 	h.renderPartial(w, "dashboard-content", data)
 }
@@ -949,7 +965,14 @@ func (h *TemplateHandler) ChoreComplete(w http.ResponseWriter, r *http.Request) 
 		completedBy = &activeUserID
 	}
 
-	if _, err := h.choreStore.CreateCompletion(id, completedBy); err != nil {
+	// Look up chore to get points
+	choreObj, err := h.choreStore.GetByID(id)
+	if err != nil || choreObj == nil {
+		http.Error(w, "chore not found", http.StatusNotFound)
+		return
+	}
+
+	if _, err := h.choreStore.CreateCompletion(id, completedBy, choreObj.Points); err != nil {
 		log.Printf("complete chore: %v", err)
 		http.Error(w, "failed to complete chore", http.StatusInternalServerError)
 		return
@@ -957,7 +980,11 @@ func (h *TemplateHandler) ChoreComplete(w http.ResponseWriter, r *http.Request) 
 
 	h.broadcast(websocket.NewMessage("chore", "completed", id, nil))
 
-	h.renderToast(w, "success", "Chore completed!")
+	toastMsg := "Chore completed!"
+	if choreObj.Points > 0 {
+		toastMsg = fmt.Sprintf("Chore completed! +%d points", choreObj.Points)
+	}
+	h.renderToast(w, "success", toastMsg)
 
 	choreData, err := h.buildChoreListData("all", 0)
 	if err != nil {
@@ -1772,6 +1799,582 @@ func (h *TemplateHandler) buildGrocerySummaryData() (map[string]any, error) {
 	}
 
 	return map[string]any{"UncheckedCount": count}, nil
+}
+
+// --- Notes handlers ---
+
+// NotesPage renders the full notes page inside the dashboard layout.
+func (h *TemplateHandler) NotesPage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "notes")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		log.Printf("build note list: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	noteData["Members"] = data["Members"]
+
+	content, err := h.renderSection("notes-content", noteData)
+	if err != nil {
+		log.Printf("render notes content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
+}
+
+// NotesPartial renders the notes section for HTMX swap.
+func (h *TemplateHandler) NotesPartial(w http.ResponseWriter, r *http.Request) {
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		log.Printf("build note list: %v", err)
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "notes-content", noteData)
+}
+
+// NoteList renders the note list partial.
+func (h *TemplateHandler) NoteList(w http.ResponseWriter, r *http.Request) {
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "note-list", noteData)
+}
+
+// NoteNewForm renders the new note form in the modal.
+func (h *TemplateHandler) NoteNewForm(w http.ResponseWriter, r *http.Request) {
+	members, _ := h.store.List()
+	data := map[string]any{
+		"Members": members,
+	}
+	h.renderPartial(w, "note-form", data)
+}
+
+// NoteEditForm renders the edit note form in the modal.
+func (h *TemplateHandler) NoteEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	note, err := h.noteStore.GetByID(id)
+	if err != nil || note == nil {
+		http.Error(w, "note not found", http.StatusNotFound)
+		return
+	}
+
+	members, _ := h.store.List()
+	data := map[string]any{
+		"Note":    note,
+		"Members": members,
+	}
+	h.renderPartial(w, "note-edit-form", data)
+}
+
+// NoteCreate handles POST form submission to create a note.
+func (h *TemplateHandler) NoteCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	body := r.FormValue("body")
+	priority := r.FormValue("priority")
+	if priority == "" {
+		priority = "normal"
+	}
+
+	pinned := r.FormValue("pinned") == "on" || r.FormValue("pinned") == "true"
+
+	activeUserID := h.activeUserFromCookie(r)
+	var authorID *int64
+	if activeUserID > 0 {
+		authorID = &activeUserID
+	}
+
+	var expiresAt *time.Time
+	if exp := r.FormValue("expires_at"); exp != "" {
+		t, err := time.Parse("2006-01-02", exp)
+		if err == nil {
+			// Set to end of day UTC
+			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			expiresAt = &t
+		}
+	}
+
+	note, err := h.noteStore.Create(title, body, authorID, pinned, priority, expiresAt)
+	if err != nil {
+		log.Printf("create note: %v", err)
+		http.Error(w, "failed to create note", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("note", "created", note.ID, nil))
+
+	w.Header().Set("HX-Trigger", "closeNoteModal")
+
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "note-list", noteData)
+}
+
+// NoteUpdate handles PUT form submission to update a note.
+func (h *TemplateHandler) NoteUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	body := r.FormValue("body")
+	priority := r.FormValue("priority")
+	if priority == "" {
+		priority = "normal"
+	}
+
+	pinned := r.FormValue("pinned") == "on" || r.FormValue("pinned") == "true"
+
+	// Preserve existing author or use active user
+	existing, _ := h.noteStore.GetByID(id)
+	var authorID *int64
+	if existing != nil {
+		authorID = existing.AuthorID
+	}
+
+	var expiresAt *time.Time
+	if exp := r.FormValue("expires_at"); exp != "" {
+		t, err := time.Parse("2006-01-02", exp)
+		if err == nil {
+			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			expiresAt = &t
+		}
+	}
+
+	note, err := h.noteStore.Update(id, title, body, authorID, pinned, priority, expiresAt)
+	if err != nil {
+		log.Printf("update note: %v", err)
+		http.Error(w, "failed to update note", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("note", "updated", note.ID, nil))
+
+	w.Header().Set("HX-Trigger", "closeNoteModal")
+
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "note-list", noteData)
+}
+
+// NoteDelete handles DELETE to remove a note.
+func (h *TemplateHandler) NoteDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.noteStore.Delete(id); err != nil {
+		log.Printf("delete note: %v", err)
+		http.Error(w, "failed to delete note", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("note", "deleted", id, nil))
+
+	w.Header().Set("HX-Trigger", "closeNoteModal")
+
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "note-list", noteData)
+}
+
+// NoteTogglePin handles POST to toggle a note's pinned status.
+func (h *TemplateHandler) NoteTogglePin(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	note, err := h.noteStore.TogglePinned(id)
+	if err != nil || note == nil {
+		http.Error(w, "failed to toggle pin", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("note", "pinned", id, nil))
+
+	noteData, err := h.buildNoteListData()
+	if err != nil {
+		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
+		return
+	}
+	members, _ := h.store.List()
+	noteData["Members"] = members
+	h.renderPartial(w, "note-list", noteData)
+}
+
+// buildNoteListData assembles note data for the notes section.
+func (h *TemplateHandler) buildNoteListData() (map[string]any, error) {
+	notes, err := h.noteStore.List()
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+
+	var pinned, unpinned []model.Note
+	for _, n := range notes {
+		if n.Pinned {
+			pinned = append(pinned, n)
+		} else {
+			unpinned = append(unpinned, n)
+		}
+	}
+
+	return map[string]any{
+		"PinnedNotes":   pinned,
+		"UnpinnedNotes": unpinned,
+		"NoteCount":     len(notes),
+	}, nil
+}
+
+// buildNoteSummaryData returns pinned notes for the dashboard widget.
+func (h *TemplateHandler) buildNoteSummaryData() (map[string]any, error) {
+	pinned, err := h.noteStore.ListPinned()
+	if err != nil {
+		return nil, fmt.Errorf("list pinned notes: %w", err)
+	}
+
+	total, err := h.noteStore.List()
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+
+	return map[string]any{
+		"PinnedNotes": pinned,
+		"NoteCount":   len(total),
+	}, nil
+}
+
+// --- Rewards handlers ---
+
+// RewardsPage renders the full rewards page inside the dashboard layout.
+func (h *TemplateHandler) RewardsPage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "chores")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	rewardsData, err := h.buildRewardsData(r)
+	if err != nil {
+		log.Printf("build rewards data: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+
+	content, err := h.renderSection("rewards-content", rewardsData)
+	if err != nil {
+		log.Printf("render rewards content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
+}
+
+// RewardsPartial renders the rewards section for HTMX swap.
+func (h *TemplateHandler) RewardsPartial(w http.ResponseWriter, r *http.Request) {
+	rewardsData, err := h.buildRewardsData(r)
+	if err != nil {
+		log.Printf("build rewards data: %v", err)
+		http.Error(w, "failed to load rewards data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "rewards-content", rewardsData)
+}
+
+// RewardsList renders the rewards list partial.
+func (h *TemplateHandler) RewardsList(w http.ResponseWriter, r *http.Request) {
+	rewardsData, err := h.buildRewardsData(r)
+	if err != nil {
+		http.Error(w, "failed to load rewards data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "rewards-list", rewardsData)
+}
+
+// RewardRedeem handles POST to redeem a reward.
+func (h *TemplateHandler) RewardRedeem(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	reward, err := h.rewardStore.GetByID(id)
+	if err != nil || reward == nil {
+		http.Error(w, "reward not found", http.StatusNotFound)
+		return
+	}
+	if !reward.Active {
+		h.renderToast(w, "error", "Reward is not active")
+		return
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+	var redeemedBy *int64
+	if activeUserID > 0 {
+		redeemedBy = &activeUserID
+	}
+
+	// Check balance
+	if redeemedBy != nil {
+		balance, err := h.rewardStore.GetPointBalance(*redeemedBy)
+		if err != nil {
+			http.Error(w, "failed to check balance", http.StatusInternalServerError)
+			return
+		}
+		if balance.Balance < reward.PointCost {
+			h.renderToast(w, "error", "Not enough points!")
+			return
+		}
+	}
+
+	if _, err := h.rewardStore.Redeem(id, redeemedBy, reward.PointCost); err != nil {
+		log.Printf("redeem reward: %v", err)
+		http.Error(w, "failed to redeem reward", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("reward", "redeemed", id, nil))
+
+	h.renderToast(w, "success", fmt.Sprintf("Redeemed: %s!", reward.Title))
+
+	rewardsData, err := h.buildRewardsData(r)
+	if err != nil {
+		http.Error(w, "failed to load rewards data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "rewards-list", rewardsData)
+}
+
+// --- Reward management (settings) handlers ---
+
+// RewardManagePartial renders the reward management list for settings.
+func (h *TemplateHandler) RewardManagePartial(w http.ResponseWriter, r *http.Request) {
+	rewards, err := h.rewardStore.List()
+	if err != nil {
+		http.Error(w, "failed to load rewards", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "reward-manage-list", map[string]any{"Rewards": rewards})
+}
+
+// RewardNewForm renders the new reward form.
+func (h *TemplateHandler) RewardNewForm(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "reward-form", nil)
+}
+
+// RewardEditForm renders the edit reward form.
+func (h *TemplateHandler) RewardEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	reward, err := h.rewardStore.GetByID(id)
+	if err != nil || reward == nil {
+		http.Error(w, "reward not found", http.StatusNotFound)
+		return
+	}
+
+	h.renderPartial(w, "reward-edit-form", map[string]any{"Reward": reward})
+}
+
+// RewardCreate handles POST to create a reward.
+func (h *TemplateHandler) RewardCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	description := r.FormValue("description")
+	pointCost, _ := strconv.Atoi(r.FormValue("point_cost"))
+	active := r.FormValue("active") == "on" || r.FormValue("active") == "true"
+
+	reward, err := h.rewardStore.Create(title, description, pointCost, active)
+	if err != nil {
+		log.Printf("create reward: %v", err)
+		http.Error(w, "failed to create reward", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("reward", "created", reward.ID, nil))
+
+	w.Header().Set("HX-Trigger", "closeRewardModal")
+
+	rewards, _ := h.rewardStore.List()
+	h.renderPartial(w, "reward-manage-list", map[string]any{"Rewards": rewards})
+}
+
+// RewardUpdate handles PUT to update a reward.
+func (h *TemplateHandler) RewardUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	description := r.FormValue("description")
+	pointCost, _ := strconv.Atoi(r.FormValue("point_cost"))
+	active := r.FormValue("active") == "on" || r.FormValue("active") == "true"
+
+	reward, err := h.rewardStore.Update(id, title, description, pointCost, active)
+	if err != nil {
+		log.Printf("update reward: %v", err)
+		http.Error(w, "failed to update reward", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("reward", "updated", reward.ID, nil))
+
+	w.Header().Set("HX-Trigger", "closeRewardModal")
+
+	rewards, _ := h.rewardStore.List()
+	h.renderPartial(w, "reward-manage-list", map[string]any{"Rewards": rewards})
+}
+
+// RewardDelete handles DELETE to remove a reward.
+func (h *TemplateHandler) RewardDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.rewardStore.Delete(id); err != nil {
+		log.Printf("delete reward: %v", err)
+		http.Error(w, "failed to delete reward", http.StatusInternalServerError)
+		return
+	}
+
+	h.broadcast(websocket.NewMessage("reward", "deleted", id, nil))
+
+	w.Header().Set("HX-Trigger", "closeRewardModal")
+
+	rewards, _ := h.rewardStore.List()
+	h.renderPartial(w, "reward-manage-list", map[string]any{"Rewards": rewards})
+}
+
+// buildRewardsData assembles data for the rewards page.
+func (h *TemplateHandler) buildRewardsData(r *http.Request) (map[string]any, error) {
+	rewards, err := h.rewardStore.ListActive()
+	if err != nil {
+		return nil, fmt.Errorf("list active rewards: %w", err)
+	}
+
+	members, err := h.store.List()
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+	var userBalance *model.PointBalance
+	if activeUserID > 0 {
+		userBalance, _ = h.rewardStore.GetPointBalance(activeUserID)
+	}
+
+	balances, _ := h.rewardStore.GetAllPointBalances()
+
+	return map[string]any{
+		"Rewards":      rewards,
+		"Members":      members,
+		"UserBalance":  userBalance,
+		"Balances":     balances,
+		"ActiveUserID": activeUserID,
+	}, nil
+}
+
+// buildLeaderboardData returns data for the dashboard leaderboard widget.
+func (h *TemplateHandler) buildLeaderboardData() (map[string]any, error) {
+	enabled, _ := h.settingsStore.Get("rewards_leaderboard_enabled")
+
+	balances, err := h.rewardStore.GetAllPointBalances()
+	if err != nil {
+		return nil, fmt.Errorf("get all balances: %w", err)
+	}
+
+	return map[string]any{
+		"Enabled":  enabled == "true",
+		"Balances": balances,
+	}, nil
 }
 
 // SettingsPartial renders the settings section for HTMX swap.

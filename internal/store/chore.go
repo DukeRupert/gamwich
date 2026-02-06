@@ -265,7 +265,7 @@ func scanCompletion(scanner interface{ Scan(...any) error }) (*model.ChoreComple
 	var c model.ChoreCompletion
 	var completedBy sql.NullInt64
 
-	err := scanner.Scan(&c.ID, &c.ChoreID, &completedBy, &c.CompletedAt)
+	err := scanner.Scan(&c.ID, &c.ChoreID, &completedBy, &c.PointsEarned, &c.CompletedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -276,17 +276,17 @@ func scanCompletion(scanner interface{ Scan(...any) error }) (*model.ChoreComple
 	return &c, nil
 }
 
-const completionCols = `id, chore_id, completed_by, completed_at`
+const completionCols = `id, chore_id, completed_by, points_earned, completed_at`
 
-func (s *ChoreStore) CreateCompletion(choreID int64, completedBy *int64) (*model.ChoreCompletion, error) {
+func (s *ChoreStore) CreateCompletion(choreID int64, completedBy *int64, pointsEarned int) (*model.ChoreCompletion, error) {
 	var cBy sql.NullInt64
 	if completedBy != nil {
 		cBy = sql.NullInt64{Int64: *completedBy, Valid: true}
 	}
 
 	result, err := s.db.Exec(
-		`INSERT INTO chore_completions (chore_id, completed_by) VALUES (?, ?)`,
-		choreID, cBy,
+		`INSERT INTO chore_completions (chore_id, completed_by, points_earned) VALUES (?, ?, ?)`,
+		choreID, cBy, pointsEarned,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert completion: %w", err)

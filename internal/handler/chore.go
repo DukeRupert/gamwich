@@ -175,7 +175,7 @@ func (h *ChoreHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	completion, err := h.choreStore.CreateCompletion(id, req.CompletedBy)
+	completion, err := h.choreStore.CreateCompletion(id, req.CompletedBy, existing.Points)
 	if err != nil {
 		log.Printf("failed to complete chore: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to complete chore"})

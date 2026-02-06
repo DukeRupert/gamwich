@@ -230,7 +230,7 @@ func TestDeleteChoreCascadesCompletions(t *testing.T) {
 	member, _ := ms.Create("Bob", "#0000FF", "B")
 	chore, _ := cs.Create("Sweep floor", "", nil, 5, "", nil)
 
-	_, err := cs.CreateCompletion(chore.ID, &member.ID)
+	_, err := cs.CreateCompletion(chore.ID, &member.ID, 0)
 	if err != nil {
 		t.Fatalf("create completion: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestDeleteMemberSetsNullOnCompletion(t *testing.T) {
 
 	member, _ := ms.Create("Diana", "#FFFF00", "D")
 	chore, _ := cs.Create("Vacuum", "", nil, 5, "", nil)
-	comp, _ := cs.CreateCompletion(chore.ID, &member.ID)
+	comp, _ := cs.CreateCompletion(chore.ID, &member.ID, 0)
 
 	if comp.CompletedBy == nil || *comp.CompletedBy != member.ID {
 		t.Fatalf("completed_by = %v, want %d", comp.CompletedBy, member.ID)
@@ -328,7 +328,7 @@ func TestCompletionCRUD(t *testing.T) {
 	chore, _ := cs.Create("Take out trash", "", nil, 3, "", nil)
 
 	// Create completion
-	comp, err := cs.CreateCompletion(chore.ID, &member.ID)
+	comp, err := cs.CreateCompletion(chore.ID, &member.ID, 0)
 	if err != nil {
 		t.Fatalf("create completion: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestCompletionNilCompletedBy(t *testing.T) {
 
 	chore, _ := cs.Create("Anonymous chore", "", nil, 0, "", nil)
 
-	comp, err := cs.CreateCompletion(chore.ID, nil)
+	comp, err := cs.CreateCompletion(chore.ID, nil, 0)
 	if err != nil {
 		t.Fatalf("create completion: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestListCompletionsByDateRange(t *testing.T) {
 	chore, _ := cs.Create("Date range chore", "", nil, 0, "", nil)
 
 	// Create a completion (uses default datetime('now'))
-	_, err := cs.CreateCompletion(chore.ID, nil)
+	_, err := cs.CreateCompletion(chore.ID, nil, 0)
 	if err != nil {
 		t.Fatalf("create completion: %v", err)
 	}
@@ -448,5 +448,29 @@ func TestAreaSortOrder(t *testing.T) {
 	// First area should now be what was last
 	if areas[0].Name != "General" {
 		t.Errorf("first area after reorder = %q, want %q", areas[0].Name, "General")
+	}
+}
+
+func TestCompletionPointsEarned(t *testing.T) {
+	cs, ms := setupChoreTestDB(t)
+
+	member, _ := ms.Create("Frank", "#00FFFF", "F")
+	chore, _ := cs.Create("Big task", "", nil, 25, "", nil)
+
+	comp, err := cs.CreateCompletion(chore.ID, &member.ID, 25)
+	if err != nil {
+		t.Fatalf("create completion with points: %v", err)
+	}
+	if comp.PointsEarned != 25 {
+		t.Errorf("points_earned = %d, want 25", comp.PointsEarned)
+	}
+
+	// Verify via list
+	completions, _ := cs.ListCompletionsByChore(chore.ID)
+	if len(completions) != 1 {
+		t.Fatalf("expected 1 completion, got %d", len(completions))
+	}
+	if completions[0].PointsEarned != 25 {
+		t.Errorf("listed points_earned = %d, want 25", completions[0].PointsEarned)
 	}
 }
