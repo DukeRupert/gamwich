@@ -122,6 +122,10 @@
     document.addEventListener('closeEventModal', function() {
         document.getElementById('event-modal').close();
     });
+    document.addEventListener('closeChoreModal', function() {
+        var modal = document.getElementById('chore-modal');
+        if (modal) modal.close();
+    });
 
     function dashboardApp() {
         return {

@@ -13,18 +13,21 @@ type Server struct {
 	db              *sql.DB
 	familyMemberH   *handler.FamilyMemberHandler
 	calendarEventH  *handler.CalendarEventHandler
+	choreH          *handler.ChoreHandler
 	templateHandler *handler.TemplateHandler
 }
 
 func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	familyMemberStore := store.NewFamilyMemberStore(db)
 	eventStore := store.NewEventStore(db)
+	choreStore := store.NewChoreStore(db)
 
 	return &Server{
 		db:              db,
 		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore),
 		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, weatherSvc),
+		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, weatherSvc),
 	}
 }
 
@@ -50,10 +53,19 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PUT /api/events/{id}", s.calendarEventH.Update)
 	mux.HandleFunc("DELETE /api/events/{id}", s.calendarEventH.Delete)
 
+	// Chore API routes
+	mux.HandleFunc("POST /api/chores", s.choreH.Create)
+	mux.HandleFunc("GET /api/chores", s.choreH.List)
+	mux.HandleFunc("PUT /api/chores/{id}", s.choreH.Update)
+	mux.HandleFunc("DELETE /api/chores/{id}", s.choreH.Delete)
+	mux.HandleFunc("POST /api/chores/{id}/complete", s.choreH.Complete)
+	mux.HandleFunc("DELETE /api/chores/{id}/completions/{completion_id}", s.choreH.UndoComplete)
+
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
 	mux.HandleFunc("GET /calendar", s.templateHandler.CalendarPage)
-	mux.HandleFunc("GET /chores", s.templateHandler.SectionPage("chores"))
+	mux.HandleFunc("GET /chores", s.templateHandler.ChoresPage)
+	mux.HandleFunc("GET /chores/manage", s.templateHandler.ChoreManagePage)
 	mux.HandleFunc("GET /grocery", s.templateHandler.SectionPage("grocery"))
 	mux.HandleFunc("GET /settings", s.templateHandler.SectionPage("settings"))
 	mux.HandleFunc("GET /settings/family", s.templateHandler.FamilyMembers)
@@ -76,6 +88,23 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /partials/calendar/events/{id}", s.templateHandler.CalendarEventDeleteForm)
 	mux.HandleFunc("GET /partials/calendar/events/{id}/recurrence-edit", s.templateHandler.RecurrenceEditChoice)
 	mux.HandleFunc("GET /partials/calendar/events/{id}/recurrence-delete", s.templateHandler.RecurrenceDeleteChoice)
+
+	// Chore partials (HTMX)
+	mux.HandleFunc("GET /partials/chores/by-person", s.templateHandler.ChoreListByPerson)
+	mux.HandleFunc("GET /partials/chores/by-area", s.templateHandler.ChoreListByArea)
+	mux.HandleFunc("GET /partials/chores/all", s.templateHandler.ChoreListAll)
+	mux.HandleFunc("GET /partials/chores/new", s.templateHandler.ChoreNewForm)
+	mux.HandleFunc("GET /partials/chores/{id}/edit", s.templateHandler.ChoreEditForm)
+	mux.HandleFunc("POST /partials/chores", s.templateHandler.ChoreCreate)
+	mux.HandleFunc("PUT /partials/chores/{id}", s.templateHandler.ChoreUpdate)
+	mux.HandleFunc("DELETE /partials/chores/{id}", s.templateHandler.ChoreDelete)
+	mux.HandleFunc("POST /partials/chores/{id}/complete", s.templateHandler.ChoreComplete)
+	mux.HandleFunc("DELETE /partials/chores/{id}/undo", s.templateHandler.ChoreUndoComplete)
+	mux.HandleFunc("GET /partials/chores/manage", s.templateHandler.ChoreManagePartial)
+	mux.HandleFunc("GET /partials/chores/areas", s.templateHandler.ChoreAreaList)
+	mux.HandleFunc("POST /partials/chores/areas", s.templateHandler.ChoreAreaCreate)
+	mux.HandleFunc("PUT /partials/chores/areas/{id}", s.templateHandler.ChoreAreaUpdate)
+	mux.HandleFunc("DELETE /partials/chores/areas/{id}", s.templateHandler.ChoreAreaDelete)
 
 	// Weather partial (HTMX polling)
 	mux.HandleFunc("GET /partials/weather", s.templateHandler.WeatherPartial)

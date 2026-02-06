@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dukerupert/gamwich/internal/chore"
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
@@ -23,11 +24,12 @@ const activeUserCookie = "gamwich_active_user"
 type TemplateHandler struct {
 	store      *store.FamilyMemberStore
 	eventStore *store.EventStore
+	choreStore *store.ChoreStore
 	weatherSvc *weather.Service
 	templates  *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, w *weather.Service) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, w *weather.Service) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
@@ -35,6 +37,7 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, w *wea
 	return &TemplateHandler{
 		store:      s,
 		eventStore: es,
+		choreStore: cs,
 		weatherSvc: w,
 		templates:  tmpl,
 	}
@@ -94,6 +97,9 @@ func (h *TemplateHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	choreSummary, _ := h.buildChoreSummaryData()
+	data["ChoreSummary"] = choreSummary
+
 	content, err := h.renderSection("dashboard-content", data)
 	if err != nil {
 		log.Printf("render dashboard content: %v", err)
@@ -134,6 +140,10 @@ func (h *TemplateHandler) DashboardPartial(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "failed to load data", http.StatusInternalServerError)
 		return
 	}
+
+	choreSummary, _ := h.buildChoreSummaryData()
+	data["ChoreSummary"] = choreSummary
+
 	h.renderPartial(w, "dashboard-content", data)
 }
 
@@ -642,9 +652,734 @@ func (h *TemplateHandler) RecurrenceDeleteChoice(w http.ResponseWriter, r *http.
 	h.renderPartial(w, "recurrence-delete-choice", data)
 }
 
-// ChoresPartial renders the chores placeholder for HTMX swap.
+// ChoresPage renders the full chores page inside the dashboard layout.
+func (h *TemplateHandler) ChoresPage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "chores")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		log.Printf("build chore list: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+
+	content, err := h.renderSection("chores-content", choreData)
+	if err != nil {
+		log.Printf("render chores content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
+}
+
+// ChoresPartial renders the chores section for HTMX swap.
 func (h *TemplateHandler) ChoresPartial(w http.ResponseWriter, r *http.Request) {
-	h.renderPartial(w, "chores-content", nil)
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		log.Printf("build chore list: %v", err)
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chores-content", choreData)
+}
+
+// ChoreListByPerson renders the by-person chore list partial.
+func (h *TemplateHandler) ChoreListByPerson(w http.ResponseWriter, r *http.Request) {
+	choreData, err := h.buildChoreListData("by-person", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-by-person", choreData)
+}
+
+// ChoreListByArea renders the by-area chore list partial.
+func (h *TemplateHandler) ChoreListByArea(w http.ResponseWriter, r *http.Request) {
+	choreData, err := h.buildChoreListData("by-area", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-by-area", choreData)
+}
+
+// ChoreListAll renders the all chores list partial.
+func (h *TemplateHandler) ChoreListAll(w http.ResponseWriter, r *http.Request) {
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreNewForm renders the chore creation form.
+func (h *TemplateHandler) ChoreNewForm(w http.ResponseWriter, r *http.Request) {
+	members, _ := h.store.List()
+	areas, _ := h.choreStore.ListAreas()
+
+	h.renderPartial(w, "chore-form", map[string]any{
+		"Members": members,
+		"Areas":   areas,
+	})
+}
+
+// ChoreEditForm renders the chore edit form.
+func (h *TemplateHandler) ChoreEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	c, err := h.choreStore.GetByID(id)
+	if err != nil || c == nil {
+		http.Error(w, "chore not found", http.StatusNotFound)
+		return
+	}
+
+	members, _ := h.store.List()
+	areas, _ := h.choreStore.ListAreas()
+
+	var areaID, assignedTo int64
+	if c.AreaID != nil {
+		areaID = *c.AreaID
+	}
+	if c.AssignedTo != nil {
+		assignedTo = *c.AssignedTo
+	}
+
+	h.renderPartial(w, "chore-edit-form", map[string]any{
+		"ID":             c.ID,
+		"Title":          c.Title,
+		"Description":    c.Description,
+		"AreaID":         areaID,
+		"Points":         c.Points,
+		"RecurrenceRule": c.RecurrenceRule,
+		"AssignedTo":     assignedTo,
+		"Members":        members,
+		"Areas":          areas,
+	})
+}
+
+// ChoreCreate handles POST form submission to create a chore.
+func (h *TemplateHandler) ChoreCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	description := r.FormValue("description")
+	points, _ := strconv.Atoi(r.FormValue("points"))
+	recurrenceRule := r.FormValue("recurrence_rule")
+
+	var areaID *int64
+	if aStr := r.FormValue("area_id"); aStr != "" && aStr != "0" {
+		id, err := strconv.ParseInt(aStr, 10, 64)
+		if err == nil {
+			areaID = &id
+		}
+	}
+
+	var assignedTo *int64
+	if mStr := r.FormValue("assigned_to"); mStr != "" && mStr != "0" {
+		id, err := strconv.ParseInt(mStr, 10, 64)
+		if err == nil {
+			assignedTo = &id
+		}
+	}
+
+	if _, err := h.choreStore.Create(title, description, areaID, points, recurrenceRule, assignedTo); err != nil {
+		log.Printf("create chore: %v", err)
+		http.Error(w, "failed to create chore", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeChoreModal")
+	h.renderToast(w, "success", "Chore created")
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreUpdate handles PUT form submission to update a chore.
+func (h *TemplateHandler) ChoreUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		h.renderToast(w, "error", "Title is required")
+		return
+	}
+
+	description := r.FormValue("description")
+	points, _ := strconv.Atoi(r.FormValue("points"))
+	recurrenceRule := r.FormValue("recurrence_rule")
+
+	var areaID *int64
+	if aStr := r.FormValue("area_id"); aStr != "" && aStr != "0" {
+		aid, err := strconv.ParseInt(aStr, 10, 64)
+		if err == nil {
+			areaID = &aid
+		}
+	}
+
+	var assignedTo *int64
+	if mStr := r.FormValue("assigned_to"); mStr != "" && mStr != "0" {
+		mid, err := strconv.ParseInt(mStr, 10, 64)
+		if err == nil {
+			assignedTo = &mid
+		}
+	}
+
+	if _, err := h.choreStore.Update(id, title, description, areaID, points, recurrenceRule, assignedTo); err != nil {
+		log.Printf("update chore: %v", err)
+		http.Error(w, "failed to update chore", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeChoreModal")
+	h.renderToast(w, "success", "Chore updated")
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreDelete handles DELETE for a chore.
+func (h *TemplateHandler) ChoreDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.choreStore.Delete(id); err != nil {
+		http.Error(w, "failed to delete chore", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "closeChoreModal")
+	h.renderToast(w, "success", "Chore deleted")
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreComplete handles POST to complete a chore via HTMX.
+func (h *TemplateHandler) ChoreComplete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	activeUserID := h.activeUserFromCookie(r)
+	var completedBy *int64
+	if activeUserID > 0 {
+		completedBy = &activeUserID
+	}
+
+	if _, err := h.choreStore.CreateCompletion(id, completedBy); err != nil {
+		log.Printf("complete chore: %v", err)
+		http.Error(w, "failed to complete chore", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Chore completed!")
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreUndoComplete handles DELETE to undo a chore completion.
+func (h *TemplateHandler) ChoreUndoComplete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	// Undo by removing the last completion for this chore
+	last, err := h.choreStore.LastCompletionForChore(id)
+	if err != nil {
+		http.Error(w, "failed to get completion", http.StatusInternalServerError)
+		return
+	}
+	if last != nil {
+		if err := h.choreStore.DeleteCompletion(last.ID); err != nil {
+			http.Error(w, "failed to undo completion", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	h.renderToast(w, "success", "Completion undone")
+
+	choreData, err := h.buildChoreListData("all", 0)
+	if err != nil {
+		http.Error(w, "failed to load chores", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-list-all", choreData)
+}
+
+// ChoreManagePage renders the full chore management page.
+func (h *TemplateHandler) ChoreManagePage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildDashboardData(r, "chores")
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+
+	manageData, err := h.buildChoreManageData()
+	if err != nil {
+		log.Printf("build chore manage data: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+
+	content, err := h.renderSection("chore-manage-content", manageData)
+	if err != nil {
+		log.Printf("render chore manage content: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	data["Content"] = content
+
+	h.render(w, "layout.html", data)
+}
+
+// ChoreManagePartial renders the manage section partial.
+func (h *TemplateHandler) ChoreManagePartial(w http.ResponseWriter, r *http.Request) {
+	manageData, err := h.buildChoreManageData()
+	if err != nil {
+		http.Error(w, "failed to load data", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-manage-content", manageData)
+}
+
+// ChoreAreaList renders the area list partial.
+func (h *TemplateHandler) ChoreAreaList(w http.ResponseWriter, r *http.Request) {
+	areas, err := h.choreStore.ListAreas()
+	if err != nil {
+		http.Error(w, "failed to load areas", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "chore-area-list", map[string]any{"Areas": areas})
+}
+
+// ChoreAreaCreate handles POST to create a new area.
+func (h *TemplateHandler) ChoreAreaCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.renderToast(w, "error", "Area name is required")
+		return
+	}
+
+	if _, err := h.choreStore.CreateArea(name, 0); err != nil {
+		log.Printf("create area: %v", err)
+		http.Error(w, "failed to create area", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Area created")
+	areas, _ := h.choreStore.ListAreas()
+	h.renderPartial(w, "chore-area-list", map[string]any{"Areas": areas})
+}
+
+// ChoreAreaUpdate handles PUT to rename an area.
+func (h *TemplateHandler) ChoreAreaUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.renderToast(w, "error", "Area name is required")
+		return
+	}
+
+	area, err := h.choreStore.GetAreaByID(id)
+	if err != nil || area == nil {
+		http.Error(w, "area not found", http.StatusNotFound)
+		return
+	}
+
+	if _, err := h.choreStore.UpdateArea(id, name, area.SortOrder); err != nil {
+		http.Error(w, "failed to update area", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Area updated")
+	areas, _ := h.choreStore.ListAreas()
+	h.renderPartial(w, "chore-area-list", map[string]any{"Areas": areas})
+}
+
+// ChoreAreaDelete handles DELETE for an area.
+func (h *TemplateHandler) ChoreAreaDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.choreStore.DeleteArea(id); err != nil {
+		http.Error(w, "failed to delete area", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Area deleted")
+	areas, _ := h.choreStore.ListAreas()
+	h.renderPartial(w, "chore-area-list", map[string]any{"Areas": areas})
+}
+
+// --- Chore helper methods ---
+
+type memberChoreSummary struct {
+	MemberName  string
+	MemberEmoji string
+	MemberColor string
+	Total       int
+	Done        int
+}
+
+func (h *TemplateHandler) buildChoreListData(filter string, filterID int64) (map[string]any, error) {
+	chores, err := h.choreStore.List()
+	if err != nil {
+		return nil, fmt.Errorf("list chores: %w", err)
+	}
+
+	members, err := h.store.List()
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+
+	areas, err := h.choreStore.ListAreas()
+	if err != nil {
+		return nil, fmt.Errorf("list areas: %w", err)
+	}
+
+	memberMap := make(map[int64]model.FamilyMember)
+	for _, m := range members {
+		memberMap[m.ID] = m
+	}
+	areaMap := make(map[int64]model.ChoreArea)
+	for _, a := range areas {
+		areaMap[a.ID] = a
+	}
+
+	today := time.Now()
+	var choreList []chore.ChoreWithStatus
+
+	for _, c := range chores {
+		last, _ := h.choreStore.LastCompletionForChore(c.ID)
+		var lastTime *time.Time
+		if last != nil {
+			lastTime = &last.CompletedAt
+		}
+		status, dueDate := chore.ComputeStatus(c, lastTime, today)
+
+		cws := chore.ChoreWithStatus{
+			Chore:          c,
+			Status:         status,
+			DueDate:        dueDate,
+			LastCompletion: lastTime,
+		}
+
+		if c.AreaID != nil {
+			if a, ok := areaMap[*c.AreaID]; ok {
+				cws.AreaName = a.Name
+			}
+		}
+		if c.AssignedTo != nil {
+			if m, ok := memberMap[*c.AssignedTo]; ok {
+				cws.MemberName = m.Name
+				cws.MemberColor = m.Color
+				cws.MemberEmoji = m.AvatarEmoji
+			}
+		}
+
+		choreList = append(choreList, cws)
+	}
+
+	// Sort: overdue > pending > completed > not_due
+	sort.Slice(choreList, func(i, j int) bool {
+		return statusPriority(choreList[i].Status) < statusPriority(choreList[j].Status)
+	})
+
+	// Group by person
+	type personGroup struct {
+		MemberName  string
+		MemberEmoji string
+		MemberColor string
+		MemberID    int64
+		Chores      []chore.ChoreWithStatus
+		Total       int
+		Done        int
+	}
+	personGroups := make(map[int64]*personGroup)
+	var unassignedGroup *personGroup
+
+	for _, c := range choreList {
+		if c.AssignedTo != nil {
+			mid := *c.AssignedTo
+			if _, ok := personGroups[mid]; !ok {
+				m := memberMap[mid]
+				personGroups[mid] = &personGroup{
+					MemberName:  m.Name,
+					MemberEmoji: m.AvatarEmoji,
+					MemberColor: m.Color,
+					MemberID:    mid,
+				}
+			}
+			pg := personGroups[mid]
+			pg.Chores = append(pg.Chores, c)
+			pg.Total++
+			if c.Status == chore.StatusCompleted {
+				pg.Done++
+			}
+		} else {
+			if unassignedGroup == nil {
+				unassignedGroup = &personGroup{MemberName: "Unassigned", MemberEmoji: "?"}
+			}
+			unassignedGroup.Chores = append(unassignedGroup.Chores, c)
+			unassignedGroup.Total++
+			if c.Status == chore.StatusCompleted {
+				unassignedGroup.Done++
+			}
+		}
+	}
+
+	// Sort person groups by member order
+	var personList []personGroup
+	for _, m := range members {
+		if pg, ok := personGroups[m.ID]; ok {
+			personList = append(personList, *pg)
+		}
+	}
+	if unassignedGroup != nil {
+		personList = append(personList, *unassignedGroup)
+	}
+
+	// Group by area
+	type areaGroup struct {
+		AreaName string
+		AreaID   int64
+		Chores   []chore.ChoreWithStatus
+	}
+	areaGroups := make(map[int64]*areaGroup)
+	var noAreaGroup *areaGroup
+
+	for _, c := range choreList {
+		if c.AreaID != nil {
+			aid := *c.AreaID
+			if _, ok := areaGroups[aid]; !ok {
+				a := areaMap[aid]
+				areaGroups[aid] = &areaGroup{AreaName: a.Name, AreaID: aid}
+			}
+			areaGroups[aid].Chores = append(areaGroups[aid].Chores, c)
+		} else {
+			if noAreaGroup == nil {
+				noAreaGroup = &areaGroup{AreaName: "No Area"}
+			}
+			noAreaGroup.Chores = append(noAreaGroup.Chores, c)
+		}
+	}
+
+	var areaList []areaGroup
+	for _, a := range areas {
+		if ag, ok := areaGroups[a.ID]; ok {
+			areaList = append(areaList, *ag)
+		}
+	}
+	if noAreaGroup != nil {
+		areaList = append(areaList, *noAreaGroup)
+	}
+
+	return map[string]any{
+		"Chores":       choreList,
+		"PersonGroups": personList,
+		"AreaGroups":   areaList,
+		"Members":      members,
+		"Areas":        areas,
+		"Filter":       filter,
+	}, nil
+}
+
+func (h *TemplateHandler) buildChoreManageData() (map[string]any, error) {
+	chores, err := h.choreStore.List()
+	if err != nil {
+		return nil, fmt.Errorf("list chores: %w", err)
+	}
+
+	areas, err := h.choreStore.ListAreas()
+	if err != nil {
+		return nil, fmt.Errorf("list areas: %w", err)
+	}
+
+	members, _ := h.store.List()
+
+	areaMap := make(map[int64]model.ChoreArea)
+	for _, a := range areas {
+		areaMap[a.ID] = a
+	}
+	memberMap := make(map[int64]model.FamilyMember)
+	for _, m := range members {
+		memberMap[m.ID] = m
+	}
+
+	type choreDisplay struct {
+		model.Chore
+		AreaName   string
+		MemberName string
+	}
+	var choreDisplays []choreDisplay
+	for _, c := range chores {
+		cd := choreDisplay{Chore: c}
+		if c.AreaID != nil {
+			if a, ok := areaMap[*c.AreaID]; ok {
+				cd.AreaName = a.Name
+			}
+		}
+		if c.AssignedTo != nil {
+			if m, ok := memberMap[*c.AssignedTo]; ok {
+				cd.MemberName = m.Name
+			}
+		}
+		choreDisplays = append(choreDisplays, cd)
+	}
+
+	return map[string]any{
+		"Chores":  choreDisplays,
+		"Areas":   areas,
+		"Members": members,
+	}, nil
+}
+
+func (h *TemplateHandler) buildChoreSummaryData() ([]memberChoreSummary, error) {
+	chores, err := h.choreStore.List()
+	if err != nil {
+		return nil, fmt.Errorf("list chores: %w", err)
+	}
+
+	members, err := h.store.List()
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+
+	today := time.Now()
+	memberMap := make(map[int64]model.FamilyMember)
+	for _, m := range members {
+		memberMap[m.ID] = m
+	}
+
+	// Count per member
+	type counts struct {
+		total int
+		done  int
+	}
+	memberCounts := make(map[int64]*counts)
+
+	for _, c := range chores {
+		if c.AssignedTo == nil {
+			continue
+		}
+		mid := *c.AssignedTo
+		if _, ok := memberCounts[mid]; !ok {
+			memberCounts[mid] = &counts{}
+		}
+		mc := memberCounts[mid]
+		mc.total++
+
+		last, _ := h.choreStore.LastCompletionForChore(c.ID)
+		var lastTime *time.Time
+		if last != nil {
+			lastTime = &last.CompletedAt
+		}
+		status, _ := chore.ComputeStatus(c, lastTime, today)
+		if status == chore.StatusCompleted {
+			mc.done++
+		}
+	}
+
+	var summaries []memberChoreSummary
+	for _, m := range members {
+		if mc, ok := memberCounts[m.ID]; ok {
+			summaries = append(summaries, memberChoreSummary{
+				MemberName:  m.Name,
+				MemberEmoji: m.AvatarEmoji,
+				MemberColor: m.Color,
+				Total:       mc.total,
+				Done:        mc.done,
+			})
+		}
+	}
+
+	return summaries, nil
+}
+
+func statusPriority(s chore.Status) int {
+	switch s {
+	case chore.StatusOverdue:
+		return 0
+	case chore.StatusPending:
+		return 1
+	case chore.StatusCompleted:
+		return 2
+	case chore.StatusNotDue:
+		return 3
+	default:
+		return 4
+	}
 }
 
 // GroceryPartial renders the grocery placeholder for HTMX swap.
