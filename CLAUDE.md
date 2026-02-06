@@ -43,6 +43,30 @@ The application is a monolithic Go HTTP server serving both API endpoints and re
 - Offline-resilient, self-hosted (family data stays local)
 - Simple over clever — no bloat
 
+## Deployment
+
+CI/CD is handled by GitHub Actions (`.github/workflows/deploy.yml`). The pipeline runs tests, builds a Docker image, pushes it to Docker Hub (`dukerupert/gamwich`), then SSHs into the VPS to pull and restart.
+
+**Triggers:**
+- Push to `main` — builds with `latest` and commit SHA tags, deploys automatically
+- Push a `v*` tag — builds with semver tags (e.g. `1.2.3`, `1.2`), deploys automatically
+
+**To release a new version:**
+
+```bash
+# 1. Tag the current commit with a semver version
+git tag v1.2.3
+
+# 2. Push the tag to trigger the CI/CD pipeline
+git push origin v1.2.3
+```
+
+This will: run tests → build Docker image → push to Docker Hub (tagged `1.2.3`, `1.2`, and the commit SHA) → SSH deploy to VPS via `docker compose pull && docker compose up -d`.
+
+**Required GitHub Secrets:**
+- `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` — Docker Hub credentials
+- `VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY` / `VPS_DEPLOY_PATH` — VPS SSH and deploy path
+
 ## Key Documentation
 
 - `dev/features.md` — comprehensive feature specification and data model
