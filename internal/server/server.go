@@ -136,7 +136,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PUT /partials/chores/{id}", s.templateHandler.ChoreUpdate)
 	mux.HandleFunc("DELETE /partials/chores/{id}", s.templateHandler.ChoreDelete)
 	mux.HandleFunc("POST /partials/chores/{id}/complete", s.templateHandler.ChoreComplete)
-	mux.HandleFunc("DELETE /partials/chores/{id}/undo-complete", s.templateHandler.ChoreUndoComplete)
+	mux.HandleFunc("POST /partials/chores/{id}/undo-complete", s.templateHandler.ChoreUndoComplete)
 	mux.HandleFunc("GET /partials/chores/manage", s.templateHandler.ChoreManagePartial)
 	mux.HandleFunc("GET /partials/chores/areas", s.templateHandler.ChoreAreaList)
 	mux.HandleFunc("POST /partials/chores/areas", s.templateHandler.ChoreAreaCreate)

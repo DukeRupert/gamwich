@@ -139,7 +139,7 @@
     <!-- Undo button (checked state) -->
     <input type="checkbox" checked
            class="checkbox checkbox-lg checkbox-success"
-           hx-delete="/partials/chores/{{.ID}}/undo-complete"
+           hx-post="/partials/chores/{{.ID}}/undo-complete"
            hx-target="#chore-list-content"
            hx-swap="innerHTML" />
     {{else}}
