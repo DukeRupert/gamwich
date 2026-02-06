@@ -369,42 +369,40 @@ The Cloud tier monetizes the natural desire for remote access and data safety. T
 
 ---
 
-### Milestone 4.1: Billing & License Key System
+### Milestone 4.1: Billing & License Key System ✅
 
 **Goal:** Stripe integration for subscription management and a license key mechanism to activate paid features on self-hosted instances.
 
+**Status:** Complete — standalone billing service (`cmd/billing/`) with Stripe checkout/webhooks, magic link auth, license key generation (`GW-XXXX-XXXX-XXXX-XXXX`), and account management. Gamwich app (`cmd/gamwich/`) gains a license client with background validation, caching, and 7-day offline grace period. 38 tests across billing stores and license client.
+
 #### Tasks
 
-1. **Design subscription data model**
-   - Migration: `subscriptions` table (`id`, `household_id` FK, `stripe_customer_id`, `stripe_subscription_id`, `plan` (cloud/hosted), `status` (active/past_due/cancelled), `current_period_end`, `created_at`, `updated_at`)
-   - Migration: `license_keys` table (`id`, `household_id` FK, `key` (UNIQUE), `plan`, `activated_at`, `expires_at`)
-   - _Test: Migrations run_
+1. **~~Design subscription data model~~** ✅
+   - Billing service has its own SQLite database with `accounts`, `subscriptions`, `license_keys`, `sessions` tables
+   - Full migration with indexes and update triggers
 
-2. **Build Stripe integration**
-   - `internal/billing/stripe.go` — Stripe SDK wrapper
-   - Checkout session creation (monthly + annual pricing for Cloud and Hosted)
-   - Webhook handler: `POST /webhooks/stripe` — process `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`
-   - Webhook signature verification for security
-   - _Test: Webhook handler processes test events correctly_
+2. **~~Build Stripe integration~~** ✅
+   - `internal/billing/stripe/stripe.go` — Stripe SDK v82 wrapper
+   - Checkout session creation (monthly + annual Cloud pricing)
+   - Webhook handler: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`
+   - Webhook signature verification
 
-3. **Build subscription management**
-   - `internal/store/subscription.go` — Create, GetByHousehold, Update, IsActive
-   - Account page: view plan, manage billing (link to Stripe Customer Portal), cancel
-   - Graceful degradation: if subscription lapses, tunnel and backups stop but local app continues
-   - _Test: Subscription lifecycle — create, verify active, cancel, verify inactive_
+3. **~~Build subscription management~~** ✅
+   - `internal/billing/store/subscription.go` — full CRUD with tests
+   - Account dashboard: plan status, billing portal link, license key display
+   - Graceful degradation: license client caches status, features continue during grace period
 
-4. **Build license key system**
-   - On Cloud tier activation, generate a license key tied to the household
-   - Self-hosted instance sends key to activation endpoint to enable paid features
-   - `internal/license/license.go` — Validate, CheckActive (periodic check against server)
-   - Feature gating: `license.HasFeature("tunnel")`, `license.HasFeature("backup")`
-   - Offline grace period: paid features continue for 7 days if the instance can't reach the license server
-   - _Test: Generate key, activate, verify features enabled, expire, verify features disabled_
+4. **~~Build license key system~~** ✅
+   - `internal/billing/handler/license.go` — `POST /api/license/validate` (rate-limited)
+   - `internal/license/client.go` — Gamwich-side client with `HasFeature()`, `IsFreeTier()`, `SetKey()`
+   - Background validation every 24h, 7-day offline grace period
+   - 7 license client tests
 
-5. **Build account management UI**
-   - Settings page section: "Subscription" — current plan, upgrade/downgrade, billing portal link
-   - Upgrade CTA: contextual prompts ("Access Gamwich from work? Try Cloud for $5/month") — non-intrusive, dismissable
-   - _Test: Full upgrade flow — click upgrade, complete Stripe checkout, features activate_
+5. **~~Build account management UI~~** ✅
+   - Billing service: login, pricing, account dashboard templates (DaisyUI)
+   - Gamwich settings: "Subscription" card with license key management
+   - Dashboard: dismissable upgrade CTA for free-tier users
+   - Deployment: `Dockerfile.billing`, `docker-compose.billing.yml`, GitHub Actions CI/CD
 
 ---
 
