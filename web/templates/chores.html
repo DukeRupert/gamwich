@@ -1,7 +1,7 @@
 {{define "chores-content"}}
 <div class="max-w-4xl mx-auto" x-data="{ tab: 'all' }">
     <div class="flex items-center justify-between mb-4">
-        <h1 class="text-3xl font-bold">Chores</h1>
+        <h1 class="text-2xl md:text-3xl font-bold">Chores</h1>
         <div class="flex items-center gap-2">
             <a class="btn btn-ghost btn-sm"
                hx-get="/partials/chores/manage"
@@ -11,7 +11,7 @@
     </div>
 
     <!-- Tab Navigation -->
-    <div class="tabs tabs-boxed tabs-lg mb-4">
+    <div class="tabs tabs-boxed tabs-sm md:tabs-lg mb-4">
         <button class="tab"
                 :class="tab === 'all' ? 'tab-active' : ''"
                 hx-get="/partials/chores/all"
@@ -35,7 +35,7 @@
     </div>
 
     <!-- Floating Add Button -->
-    <button class="btn btn-primary btn-circle btn-lg fixed bottom-24 right-6 shadow-lg z-10"
+    <button class="btn btn-primary btn-circle btn-lg fixed bottom-20 right-4 md:bottom-24 md:right-6 shadow-lg z-20"
             hx-get="/partials/chores/new"
             hx-target="#chore-modal-body"
             hx-swap="innerHTML"
@@ -48,7 +48,7 @@
 
 <!-- Chore Modal -->
 <dialog id="chore-modal" class="modal">
-    <div id="chore-modal-body" class="modal-box max-w-lg">
+    <div id="chore-modal-body" class="modal-box w-[calc(100%-2rem)] max-w-lg">
         <!-- Chore form loaded here via HTMX -->
     </div>
     <form method="dialog" class="modal-backdrop">
@@ -204,7 +204,7 @@
             <textarea name="description" class="textarea textarea-bordered" placeholder="Optional details"></textarea>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div class="form-control">
                 <label class="label"><span class="label-text">Area</span></label>
                 <select name="area_id" class="select select-bordered">
@@ -272,7 +272,7 @@
             <textarea name="description" class="textarea textarea-bordered">{{.Description}}</textarea>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div class="form-control">
                 <label class="label"><span class="label-text">Area</span></label>
                 <select name="area_id" class="select select-bordered">
@@ -332,7 +332,7 @@
 {{define "chore-manage-content"}}
 <div class="max-w-4xl mx-auto">
     <div class="flex items-center justify-between mb-4">
-        <h1 class="text-3xl font-bold">Manage Chores</h1>
+        <h1 class="text-2xl md:text-3xl font-bold">Manage Chores</h1>
         <button class="btn btn-ghost btn-sm"
                 hx-get="/partials/chores"
                 hx-target="#main-content"
@@ -393,7 +393,7 @@
 
 <!-- Chore Modal (for edit from manage page) -->
 <dialog id="chore-modal" class="modal">
-    <div id="chore-modal-body" class="modal-box max-w-lg">
+    <div id="chore-modal-body" class="modal-box w-[calc(100%-2rem)] max-w-lg">
     </div>
     <form method="dialog" class="modal-backdrop">
         <button>close</button>

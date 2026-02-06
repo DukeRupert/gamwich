@@ -1,14 +1,14 @@
 {{define "grocery-content"}}
 <div class="max-w-4xl mx-auto">
     <div class="flex items-center justify-between mb-4">
-        <h1 class="text-3xl font-bold">Grocery List</h1>
+        <h1 class="text-2xl md:text-3xl font-bold">Grocery List</h1>
         {{if .UncheckedCount}}
         <div class="badge badge-primary badge-lg">{{.UncheckedCount}} items</div>
         {{end}}
     </div>
 
     <!-- Quick-Add Bar -->
-    <form class="flex gap-2 mb-4"
+    <form class="flex gap-1 sm:gap-2 mb-4"
           hx-post="/partials/grocery/items"
           hx-target="#grocery-list-content"
           hx-swap="innerHTML"
@@ -29,7 +29,7 @@
 
 <!-- Grocery Edit Modal -->
 <dialog id="grocery-modal" class="modal">
-    <div id="grocery-modal-body" class="modal-box max-w-lg">
+    <div id="grocery-modal-body" class="modal-box w-[calc(100%-2rem)] max-w-lg">
         <!-- Edit form loaded here via HTMX -->
     </div>
     <form method="dialog" class="modal-backdrop">
@@ -172,7 +172,7 @@
             <input type="text" name="name" class="input input-bordered" value="{{.Name}}" required />
         </div>
 
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div class="form-control">
                 <label class="label"><span class="label-text">Quantity</span></label>
                 <input type="text" name="quantity" class="input input-bordered" value="{{.Quantity}}" placeholder="e.g. 2" />

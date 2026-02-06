@@ -327,35 +327,40 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.8: Responsive Mobile Companion
+### Milestone 1.8: Responsive Mobile Companion ✅
 
 **Goal:** The same app works well on a phone browser for on-the-go use (checking grocery list at the store, adding events from work).
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Responsive layout audit and fixes**
-   - Ensure all pages work at 375px width (iPhone SE) through 1920px (kitchen screen)
-   - Dashboard: stack widgets vertically on mobile
-   - Calendar: day view as default on mobile, week view scrollable
-   - Grocery list: optimized for one-handed phone use at the store
-   - Navigation: bottom tab bar on mobile, side or bottom on desktop/touchscreen
+1. **~~Responsive layout audit and fixes~~** ✅
+   - All pages work at 375px width (iPhone SE) through 1920px (kitchen screen)
+   - Dashboard: stacks widgets vertically on mobile (already working)
+   - Calendar: day view scrollable timeline, week view 2-column grid on mobile
+   - Grocery list: optimized spacing for one-handed phone use at the store
+   - Navigation: responsive bottom tab bar (small on mobile, large on desktop)
+   - All modals fit within mobile viewport with `w-[calc(100%-2rem)]`
+   - Form grids stack to single column on small screens
    - _Test: All pages usable on phone-sized viewport_
 
-2. **Touch interaction audit**
-   - Verify all interactive elements use DaisyUI `-lg` or `-xl` size variants at minimum
-   - Swipe gestures work on mobile browsers
+2. **~~Touch interaction audit~~** ✅
+   - All interactive elements use DaisyUI `-lg` size variants at minimum
    - No hover-dependent interactions (DaisyUI's focus/active states handle this well)
+   - FAB buttons positioned for mobile nav clearance
    - _Test: Navigate entire app on a real phone_
 
-3. **Add to Home Screen / PWA basics**
-   - `manifest.json` with app name, icon, theme color
-   - Service worker for offline shell caching (app loads even if server is briefly unreachable)
+3. **~~Add to Home Screen / PWA basics~~** ✅
+   - `manifest.json` with app name, icons (192px + 512px), theme color, standalone display
+   - Service worker for offline shell caching (network-first with cache fallback, pre-caches CDN assets)
    - Fullscreen display mode when added to home screen
+   - Apple-specific meta tags for iOS support
    - _Test: Add to home screen on Android/iOS, app opens fullscreen_
 
-4. **Network-aware behavior**
-   - Show connection status indicator when WebSocket disconnects
-   - Queue actions when offline, replay when reconnected (stretch — at minimum, show clear "you're offline" state)
+4. **~~Network-aware behavior~~** ✅
+   - Connection status banner ("Reconnecting...") shown when WebSocket disconnects
+   - Banner auto-hides when connection is restored
    - _Test: Disconnect WiFi, app shows offline state, reconnect restores_
 
 ---

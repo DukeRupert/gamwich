@@ -8,7 +8,7 @@
                 hx-get="/partials/user/pin-challenge/{{.ID}}"
                 hx-target="#pin-modal-body"
                 hx-swap="innerHTML">
-            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ring-offset-base-100 ring-offset-2 transition-all {{if eq $.ActiveUserID .ID}}ring ring-primary{{else}}opacity-50 hover:opacity-80{{end}}"
+            <div class="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-base md:text-lg ring-offset-base-100 ring-offset-2 transition-all {{if eq $.ActiveUserID .ID}}ring ring-primary{{else}}opacity-50 hover:opacity-80{{end}}"
                  style="background-color: {{.Color}}20; border: 2px solid {{.Color}}">
                 {{.AvatarEmoji}}
             </div>
@@ -18,7 +18,7 @@
                 hx-post="/partials/user/select/{{.ID}}"
                 hx-target="#user-select-bar"
                 hx-swap="innerHTML">
-            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ring-offset-base-100 ring-offset-2 transition-all {{if eq $.ActiveUserID .ID}}ring ring-primary{{else}}opacity-50 hover:opacity-80{{end}}"
+            <div class="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-base md:text-lg ring-offset-base-100 ring-offset-2 transition-all {{if eq $.ActiveUserID .ID}}ring ring-primary{{else}}opacity-50 hover:opacity-80{{end}}"
                  style="background-color: {{.Color}}20; border: 2px solid {{.Color}}">
                 {{.AvatarEmoji}}
             </div>
@@ -55,7 +55,7 @@
     <span class="text-xl">{{.CurrentIcon}}</span>
     <span class="font-bold text-lg">{{printf "%.0f" .CurrentTemp}}&deg;{{.Unit}}</span>
     <span class="text-base-content/60">{{.CurrentDesc}}</span>
-    <span class="text-base-content/40 text-xs">H:{{printf "%.0f" .HighTemp}}&deg; L:{{printf "%.0f" .LowTemp}}&deg;</span>
+    <span class="hidden sm:inline text-base-content/40 text-xs">H:{{printf "%.0f" .HighTemp}}&deg; L:{{printf "%.0f" .LowTemp}}&deg;</span>
 </div>
 {{end}}
 {{end}}
@@ -75,7 +75,7 @@
         <!-- PIN display -->
         <div class="flex gap-3 mb-2">
             <template x-for="i in 4" :key="i">
-                <div class="w-14 h-14 border-2 rounded-lg flex items-center justify-center text-2xl font-bold"
+                <div class="w-12 h-12 md:w-14 md:h-14 border-2 rounded-lg flex items-center justify-center text-2xl font-bold"
                      :class="pin.length >= i ? 'border-primary bg-primary/10' : 'border-base-300'">
                     <span x-show="pin.length >= i">&#9679;</span>
                 </div>
@@ -86,16 +86,16 @@
         <div class="grid grid-cols-3 gap-2 max-w-xs">
             <template x-for="n in [1,2,3,4,5,6,7,8,9]" :key="n">
                 <button type="button"
-                        class="btn btn-lg btn-outline w-16 h-16 text-xl"
+                        class="btn btn-lg btn-outline w-14 h-14 md:w-16 md:h-16 text-xl"
                         @click="if(pin.length < 4) pin += n.toString()"
                         x-text="n"></button>
             </template>
             <div></div>
             <button type="button"
-                    class="btn btn-lg btn-outline w-16 h-16 text-xl"
+                    class="btn btn-lg btn-outline w-14 h-14 md:w-16 md:h-16 text-xl"
                     @click="if(pin.length < 4) pin += '0'">0</button>
             <button type="button"
-                    class="btn btn-lg btn-ghost w-16 h-16 text-xl"
+                    class="btn btn-lg btn-ghost w-14 h-14 md:w-16 md:h-16 text-xl"
                     @click="pin = pin.slice(0, -1)">&#9003;</button>
         </div>
 
