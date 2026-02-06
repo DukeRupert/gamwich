@@ -7,6 +7,9 @@ services:
       - gamwich-data:/data
     environment:
       GAMWICH_DB_PATH: /data/gamwich.db
+      GAMWICH_POSTMARK_TOKEN: ${GAMWICH_POSTMARK_TOKEN:-}
+      GAMWICH_FROM_EMAIL: ${GAMWICH_FROM_EMAIL:-}
+      GAMWICH_BASE_URL: ${GAMWICH_BASE_URL:-}
     restart: unless-stopped
 
 volumes:

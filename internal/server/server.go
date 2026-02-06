@@ -3,8 +3,11 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
+	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/handler"
+	"github.com/dukerupert/gamwich/internal/middleware"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
 	ws "github.com/dukerupert/gamwich/internal/websocket"
@@ -21,9 +24,13 @@ type Server struct {
 	rewardH         *handler.RewardHandler
 	settingsH       *handler.SettingsHandler
 	templateHandler *handler.TemplateHandler
+	authH           *handler.AuthHandler
+	sessionStore    *store.SessionStore
+	householdStore  *store.HouseholdStore
+	rateLimiter     *middleware.RateLimiter
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string) *Server {
 	hub := ws.NewHub()
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
@@ -33,6 +40,12 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	noteStore := store.NewNoteStore(db)
 	rewardStore := store.NewRewardStore(db)
 	settingsStore := store.NewSettingsStore(db)
+
+	// Auth stores
+	userStore := store.NewUserStore(db)
+	householdStore := store.NewHouseholdStore(db)
+	sessionStore := store.NewSessionStore(db)
+	magicLinkStore := store.NewMagicLinkStore(db)
 
 	return &Server{
 		db:              db,
@@ -45,11 +58,66 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
 		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub),
+		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
+		sessionStore:    sessionStore,
+		householdStore:  householdStore,
+		rateLimiter:     middleware.NewRateLimiter(),
 	}
 }
 
+// SessionStore returns the session store for cleanup tasks.
+func (s *Server) SessionStore() *store.SessionStore {
+	return s.sessionStore
+}
+
+// MagicLinkStore returns the magic link store for cleanup tasks.
+func (s *Server) MagicLinkStore() *store.MagicLinkStore {
+	return store.NewMagicLinkStore(s.db)
+}
+
+// RateLimiter returns the rate limiter for cleanup tasks.
+func (s *Server) RateLimiter() *middleware.RateLimiter {
+	return s.rateLimiter
+}
+
 func (s *Server) Router() http.Handler {
-	mux := http.NewServeMux()
+	outerMux := http.NewServeMux()
+
+	// Public routes (no auth required)
+	outerMux.HandleFunc("GET /login", s.authH.LoginPage)
+	outerMux.HandleFunc("POST /login", s.rateLimitedHandler(s.authH.Login))
+	outerMux.HandleFunc("GET /register", s.authH.RegisterPage)
+	outerMux.HandleFunc("POST /register", s.rateLimitedHandler(s.authH.Register))
+	outerMux.HandleFunc("GET /auth/verify", s.authH.Verify)
+	outerMux.HandleFunc("GET /invite/accept", s.authH.InviteAccept)
+	outerMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+
+	// Protected routes — wrapped with RequireAuth middleware
+	protectedMux := http.NewServeMux()
+	s.registerProtectedRoutes(protectedMux)
+
+	authMiddleware := middleware.RequireAuth(s.sessionStore, s.householdStore)
+	outerMux.Handle("/", authMiddleware(protectedMux))
+
+	return outerMux
+}
+
+func (s *Server) rateLimitedHandler(h http.HandlerFunc) http.HandlerFunc {
+	keyFunc := func(r *http.Request) string {
+		return r.RemoteAddr
+	}
+	rl := middleware.RateLimit(s.rateLimiter, keyFunc, 10, time.Minute)
+	return func(w http.ResponseWriter, r *http.Request) {
+		rl(http.HandlerFunc(h)).ServeHTTP(w, r)
+	}
+}
+
+func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
+	// Auth routes that require authentication
+	mux.HandleFunc("POST /logout", s.authH.Logout)
+	mux.HandleFunc("GET /households", s.authH.HouseholdsPage)
+	mux.HandleFunc("POST /households/switch", s.authH.SwitchHousehold)
+	mux.HandleFunc("POST /invite", s.authH.Invite)
 
 	// API routes
 	mux.HandleFunc("GET /api/family-members", s.familyMemberH.List)
@@ -215,9 +283,4 @@ func (s *Server) Router() http.Handler {
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", ws.HandleWebSocket(s.hub))
-
-	// Static files
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-
-	return mux
 }

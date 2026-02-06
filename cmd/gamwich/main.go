@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/database"
+	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/server"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
@@ -56,7 +57,16 @@ func main() {
 	}
 	weatherSvc := weather.NewService(weatherCfg)
 
-	srv := server.New(db, weatherSvc)
+	// Email config
+	postmarkToken := os.Getenv("GAMWICH_POSTMARK_TOKEN")
+	fromEmail := os.Getenv("GAMWICH_FROM_EMAIL")
+	baseURL := os.Getenv("GAMWICH_BASE_URL")
+	if baseURL == "" {
+		baseURL = fmt.Sprintf("http://localhost:%s", port)
+	}
+	emailClient := email.NewClient(postmarkToken, fromEmail, baseURL)
+
+	srv := server.New(db, weatherSvc, emailClient, baseURL)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -65,6 +75,32 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 		// No ReadTimeout/WriteTimeout — WebSocket connections are long-lived
 	}
+
+	// Background cleanup goroutine
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if n, err := srv.SessionStore().DeleteExpired(); err != nil {
+					log.Printf("cleanup expired sessions: %v", err)
+				} else if n > 0 {
+					log.Printf("cleaned up %d expired sessions", n)
+				}
+				if n, err := srv.MagicLinkStore().DeleteExpired(); err != nil {
+					log.Printf("cleanup expired magic links: %v", err)
+				} else if n > 0 {
+					log.Printf("cleaned up %d expired magic links", n)
+				}
+				srv.RateLimiter().Cleanup()
+			case <-cleanupCtx.Done():
+				return
+			}
+		}
+	}()
 
 	go func() {
 		fmt.Printf("Gamwich running at http://localhost:%s\n", port)
@@ -78,6 +114,7 @@ func main() {
 	<-quit
 
 	fmt.Println("\nShutting down...")
+	cleanupCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {

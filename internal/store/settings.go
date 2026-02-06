@@ -67,7 +67,8 @@ func (s *SettingsStore) GetAll() (map[string]string, error) {
 
 func (s *SettingsStore) Set(key, value string) error {
 	_, err := s.db.Exec(
-		`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
+		`INSERT INTO settings (household_id, key, value, updated_at) VALUES (1, ?, ?, ?)
+		 ON CONFLICT(household_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value, time.Now().UTC(),
 	)
 	if err != nil {
