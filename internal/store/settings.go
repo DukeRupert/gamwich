@@ -32,6 +32,14 @@ var tunnelKeys = []string{
 	"tunnel_token",
 }
 
+var backupKeys = []string{
+	"backup_enabled",
+	"backup_schedule_hour",
+	"backup_retention_days",
+	"backup_passphrase_salt",
+	"backup_passphrase_hash",
+}
+
 type SettingsStore struct {
 	db *sql.DB
 }
@@ -140,6 +148,22 @@ func (s *SettingsStore) GetTunnelSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get tunnel setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetBackupSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range backupKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get backup setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

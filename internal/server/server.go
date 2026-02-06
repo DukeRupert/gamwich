@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dukerupert/gamwich/internal/backup"
 	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/handler"
 	"github.com/dukerupert/gamwich/internal/license"
@@ -33,9 +34,10 @@ type Server struct {
 	rateLimiter     *middleware.RateLimiter
 	licenseClient   *license.Client
 	tunnelManager   *tunnel.Manager
+	backupManager   *backup.Manager
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string, backupCfg backup.Config) *Server {
 	hub := ws.NewHub()
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
@@ -51,6 +53,20 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 	householdStore := store.NewHouseholdStore(db)
 	sessionStore := store.NewSessionStore(db)
 	magicLinkStore := store.NewMagicLinkStore(db)
+
+	// Backup store + manager
+	backupStore := store.NewBackupStore(db)
+	backupMgr := backup.NewManager(backupCfg, db, backupStore, settingsStore, func(s backup.Status) {
+		hub.Broadcast(ws.Message{
+			Type:   "backup_status",
+			Entity: "backup",
+			Action: string(s.State),
+			Extra: map[string]any{
+				"in_progress": s.InProgress,
+				"error":       s.Error,
+			},
+		})
+	})
 
 	// Tunnel manager
 	tunnelCfg := tunnel.Config{
@@ -82,13 +98,14 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore),
 		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
 		sessionStore:    sessionStore,
 		householdStore:  householdStore,
 		rateLimiter:     middleware.NewRateLimiter(),
 		licenseClient:   licenseClient,
 		tunnelManager:   tunnelMgr,
+		backupManager:   backupMgr,
 	}
 }
 
@@ -115,6 +132,11 @@ func (s *Server) LicenseClient() *license.Client {
 // TunnelManager returns the tunnel manager.
 func (s *Server) TunnelManager() *tunnel.Manager {
 	return s.tunnelManager
+}
+
+// BackupManager returns the backup manager.
+func (s *Server) BackupManager() *backup.Manager {
+	return s.backupManager
 }
 
 func (s *Server) Router() http.Handler {
@@ -328,6 +350,16 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /partials/family-members/{id}/pin/gate", s.templateHandler.PINGate)
 	mux.HandleFunc("POST /partials/family-members/{id}/pin/verify", s.templateHandler.PINVerifyThenAct)
 	mux.HandleFunc("POST /partials/family-members/{id}/pin", s.templateHandler.PINSetup)
+
+	// Backup partials (HTMX)
+	mux.HandleFunc("GET /partials/settings/backup", s.templateHandler.BackupSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/backup", s.templateHandler.BackupSettingsUpdate)
+	mux.HandleFunc("PUT /partials/settings/backup/passphrase", s.templateHandler.BackupPassphraseUpdate)
+	mux.HandleFunc("POST /partials/settings/backup/now", s.templateHandler.BackupNow)
+	mux.HandleFunc("GET /partials/settings/backup/history", s.templateHandler.BackupHistoryPartial)
+	mux.HandleFunc("GET /partials/settings/backup/status", s.templateHandler.BackupStatusPartial)
+	mux.HandleFunc("POST /partials/settings/backup/restore/{id}", s.templateHandler.BackupRestore)
+	mux.HandleFunc("GET /partials/settings/backup/download/{id}", s.templateHandler.BackupDownload)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", ws.HandleWebSocket(s.hub))

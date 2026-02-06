@@ -442,39 +442,38 @@ The Cloud tier monetizes the natural desire for remote access and data safety. T
 
 ---
 
-### Milestone 4.3: Encrypted Offsite Backups
+### Milestone 4.3: Encrypted Offsite Backups ✅
 
 **Goal:** Daily encrypted backup of the SQLite database to managed cloud storage. One-click restore from any snapshot.
 
 #### Tasks
 
-1. **Build backup agent**
-   - `internal/backup/agent.go` — backup lifecycle management
-   - Flow: checkpoint SQLite WAL → copy database → encrypt with household-specific key → upload to S3-compatible storage
-   - Encryption: AES-256-GCM, key derived from a user-held secret (configured during Cloud setup)
-   - Schedule: daily (configurable), retention: 30 days default
-   - _Test: Backup runs, file is encrypted, uploaded to test S3 bucket_
+1. **Build backup agent** ✅
+   - `internal/backup/backup.go` — Manager with scheduled backups, RunNow, Restore, Download, Cleanup
+   - `internal/backup/crypto.go` — AES-256-GCM encryption with Argon2id key derivation
+   - Flow: checkpoint SQLite WAL → copy database → encrypt with passphrase + salt → upload to S3-compatible storage
+   - Schedule: daily (configurable hour), retention: 7/14/30/90 days
+   - Passphrase cached in memory for scheduled backups after first manual entry
 
-2. **Build backup API**
-   - `POST /api/backup/now` — trigger manual backup (admin only)
-   - `GET /api/backup/history` — list available backup snapshots with timestamps and sizes
-   - `POST /api/backup/restore` — download, decrypt, replace database, restart app
-   - `GET /api/backup/download/{id}` — download encrypted backup file
-   - _Test: Manual backup, list snapshots, restore from backup_
+2. **Build backup API** ✅
+   - `POST /partials/settings/backup/now` — trigger manual backup (passphrase required)
+   - `GET /partials/settings/backup/history` — list available backup snapshots
+   - `POST /partials/settings/backup/restore/{id}` — download, decrypt, validate integrity, replace database, exit for restart
+   - `GET /partials/settings/backup/download/{id}` — stream encrypted backup file
+   - Feature-gated via `licenseClient.HasFeature("backup")`
 
-3. **Build backup settings UI**
-   - Settings page section: backup schedule, retention period, last backup timestamp, backup history
-   - "Backup Now" button with progress indicator
-   - Restore flow: select snapshot → confirm → restore (with safety warning)
-   - Backup secret management: set/rotate the encryption passphrase
-   - _Test: Full round-trip — configure, backup, verify in history, restore_
+3. **Build backup settings UI** ✅
+   - Settings card: passphrase setup, schedule toggle, backup hour (UTC), retention period
+   - "Backup Now" with passphrase confirmation, polling status badge
+   - History table with download/restore actions per backup
+   - Change passphrase section with warning about existing backups
+   - No-license → "Cloud Feature" upgrade prompt
 
-4. **Server-side infrastructure**
-   - S3-compatible storage (AWS S3, Cloudflare R2, or MinIO)
-   - Per-household storage prefix (isolated paths)
-   - Cleanup job: delete backups past retention window
-   - Storage usage tracking per household (for future quota enforcement)
-   - _Test: Multiple households backup without interference, old backups cleaned up_
+4. **Server-side infrastructure** ✅
+   - S3-compatible storage via AWS SDK Go v2 (AWS S3, Cloudflare R2, MinIO)
+   - Per-household storage prefix (`{householdID}/{timestamp}.db.enc`)
+   - Cleanup job: delete backups past retention window + remove S3 objects
+   - Storage usage tracking per household (`TotalSizeByHousehold`)
 
 ---
 

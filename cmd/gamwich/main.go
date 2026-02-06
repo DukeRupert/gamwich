@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dukerupert/gamwich/internal/backup"
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/license"
@@ -73,7 +74,19 @@ func main() {
 		ValidationURL: os.Getenv("GAMWICH_LICENSE_URL"),
 	})
 
-	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port)
+	// Backup config
+	backupCfg := backup.Config{
+		DBPath: dbPath,
+		S3: backup.S3Config{
+			Endpoint:  os.Getenv("GAMWICH_BACKUP_S3_ENDPOINT"),
+			Bucket:    os.Getenv("GAMWICH_BACKUP_S3_BUCKET"),
+			Region:    os.Getenv("GAMWICH_BACKUP_S3_REGION"),
+			AccessKey: os.Getenv("GAMWICH_BACKUP_S3_ACCESS_KEY"),
+			SecretKey: os.Getenv("GAMWICH_BACKUP_S3_SECRET_KEY"),
+		},
+	}
+
+	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port, backupCfg)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -95,6 +108,13 @@ func main() {
 		if err := srv.TunnelManager().Start(tunnelCtx); err != nil {
 			log.Printf("tunnel start: %v", err)
 		}
+	}
+
+	// Start backup manager if configured and licensed
+	backupCtx, backupCancel := context.WithCancel(context.Background())
+	defer backupCancel()
+	if licenseClient.HasFeature("backup") {
+		srv.BackupManager().Start(backupCtx)
 	}
 
 	// Background cleanup goroutine
@@ -135,6 +155,8 @@ func main() {
 	<-quit
 
 	fmt.Println("\nShutting down...")
+	backupCancel()
+	srv.BackupManager().Stop()
 	tunnelCancel()
 	srv.TunnelManager().Stop()
 	cleanupCancel()

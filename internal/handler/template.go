@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dukerupert/gamwich/internal/auth"
+	"github.com/dukerupert/gamwich/internal/backup"
 	"github.com/dukerupert/gamwich/internal/chore"
 	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/license"
@@ -37,12 +40,22 @@ type TemplateHandler struct {
 	hub           *websocket.Hub
 	licenseClient *license.Client
 	tunnelManager *tunnel.Manager
+	backupManager *backup.Manager
+	backupStore   *store.BackupStore
 	templates     *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore) *TemplateHandler {
 	funcMap := template.FuncMap{
-		"add": func(a, b int) int { return a + b },
+		"add":         func(a, b int) int { return a + b },
+		"formatBytes": formatBytes,
+		"seq": func(start, end int) []int {
+			s := make([]int, 0, end-start+1)
+			for i := start; i <= end; i++ {
+				s = append(s, i)
+			}
+			return s
+		},
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseGlob("web/templates/*.html"))
 	return &TemplateHandler{
@@ -57,7 +70,27 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		hub:           hub,
 		licenseClient: lc,
 		tunnelManager: tm,
+		backupManager: bm,
+		backupStore:   bs,
 		templates:     tmpl,
+	}
+}
+
+func formatBytes(b int64) string {
+	const (
+		kb = 1024
+		mb = kb * 1024
+		gb = mb * 1024
+	)
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", b)
 	}
 }
 
@@ -3560,4 +3593,221 @@ func (h *TemplateHandler) renderToast(w http.ResponseWriter, level, message stri
 		tmplName = "toast-error"
 	}
 	h.templates.ExecuteTemplate(w, tmplName, map[string]string{"Message": message})
+}
+
+// BackupSettingsPartial renders the backup settings card content.
+func (h *TemplateHandler) BackupSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	hasBackup := h.licenseClient.HasFeature("backup")
+	status := h.backupManager.Status()
+	backupSettings, _ := h.settingsStore.GetBackupSettings()
+
+	householdID := auth.HouseholdID(r.Context())
+	history, _ := h.backupStore.List(householdID, 10)
+	totalSize, _ := h.backupStore.TotalSizeByHousehold(householdID)
+
+	passphraseSet := backupSettings["backup_passphrase_hash"] != ""
+
+	data := map[string]any{
+		"HasBackup":        hasBackup,
+		"BackupState":      string(status.State),
+		"BackupError":      status.Error,
+		"BackupInProgress": status.InProgress,
+		"BackupEnabled":    backupSettings["backup_enabled"] == "true",
+		"ScheduleHour":     backupSettings["backup_schedule_hour"],
+		"RetentionDays":    backupSettings["backup_retention_days"],
+		"PassphraseSet":    passphraseSet,
+		"HasCachedKey":     h.backupManager.HasCachedKey(householdID),
+		"History":          history,
+		"TotalSize":        totalSize,
+	}
+	h.renderPartial(w, "backup-settings-form", data)
+}
+
+// BackupSettingsUpdate handles saving backup schedule settings.
+func (h *TemplateHandler) BackupSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	enabled := r.FormValue("backup_enabled") == "true"
+	scheduleHour := r.FormValue("backup_schedule_hour")
+	retentionDays := r.FormValue("backup_retention_days")
+
+	h.settingsStore.Set("backup_enabled", fmt.Sprintf("%t", enabled))
+	if scheduleHour != "" {
+		h.settingsStore.Set("backup_schedule_hour", scheduleHour)
+	}
+	if retentionDays != "" {
+		h.settingsStore.Set("backup_retention_days", retentionDays)
+	}
+
+	w.Header().Set("HX-Trigger", `{"showToast": "Backup settings updated"}`)
+	h.BackupSettingsPartial(w, r)
+}
+
+// BackupPassphraseUpdate handles setting or changing the backup passphrase.
+func (h *TemplateHandler) BackupPassphraseUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	passphrase := r.FormValue("passphrase")
+	if len(passphrase) < 8 {
+		h.renderToast(w, "error", "Passphrase must be at least 8 characters")
+		return
+	}
+
+	// Generate salt
+	salt, err := backup.GenerateSalt()
+	if err != nil {
+		h.renderToast(w, "error", "Failed to generate salt")
+		return
+	}
+
+	// Hash passphrase with bcrypt for verification
+	hash, err := bcrypt.GenerateFromPassword([]byte(passphrase), bcrypt.DefaultCost)
+	if err != nil {
+		h.renderToast(w, "error", "Failed to hash passphrase")
+		return
+	}
+
+	// Store salt as hex and hash
+	saltHex := fmt.Sprintf("%x", salt)
+	h.settingsStore.Set("backup_passphrase_salt", saltHex)
+	h.settingsStore.Set("backup_passphrase_hash", string(hash))
+
+	// Cache key for scheduled backups
+	householdID := auth.HouseholdID(r.Context())
+	h.backupManager.CacheKey(householdID, passphrase, salt)
+
+	w.Header().Set("HX-Trigger", `{"showToast": "Backup passphrase saved"}`)
+	h.BackupSettingsPartial(w, r)
+}
+
+// BackupNow triggers an immediate backup.
+func (h *TemplateHandler) BackupNow(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	passphrase := r.FormValue("passphrase")
+	if passphrase == "" {
+		h.renderToast(w, "error", "Passphrase required")
+		return
+	}
+
+	// Verify passphrase against stored hash
+	backupSettings, _ := h.settingsStore.GetBackupSettings()
+	storedHash := backupSettings["backup_passphrase_hash"]
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(passphrase)); err != nil {
+		h.renderToast(w, "error", "Incorrect passphrase")
+		return
+	}
+
+	householdID := auth.HouseholdID(r.Context())
+
+	go func() {
+		if _, err := h.backupManager.RunNow(r.Context(), householdID, passphrase); err != nil {
+			log.Printf("backup now failed: %v", err)
+		}
+	}()
+
+	h.renderToast(w, "success", "Backup started")
+}
+
+// BackupHistoryPartial renders the backup history list.
+func (h *TemplateHandler) BackupHistoryPartial(w http.ResponseWriter, r *http.Request) {
+	householdID := auth.HouseholdID(r.Context())
+	history, _ := h.backupStore.List(householdID, 20)
+	data := map[string]any{
+		"History": history,
+	}
+	h.renderPartial(w, "backup-history-list", data)
+}
+
+// BackupStatusPartial returns the backup status badge for polling.
+func (h *TemplateHandler) BackupStatusPartial(w http.ResponseWriter, r *http.Request) {
+	status := h.backupManager.Status()
+	data := map[string]any{
+		"BackupState":      string(status.State),
+		"BackupError":      status.Error,
+		"BackupInProgress": status.InProgress,
+	}
+	h.renderPartial(w, "backup-status-badge", data)
+}
+
+// BackupRestore triggers a restore from a backup.
+func (h *TemplateHandler) BackupRestore(w http.ResponseWriter, r *http.Request) {
+	if !auth.IsAdmin(r.Context()) {
+		h.renderToast(w, "error", "Admin access required")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	idStr := r.PathValue("id")
+	backupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.renderToast(w, "error", "Invalid backup ID")
+		return
+	}
+
+	passphrase := r.FormValue("passphrase")
+	if passphrase == "" {
+		h.renderToast(w, "error", "Passphrase required")
+		return
+	}
+
+	// Verify passphrase
+	backupSettings, _ := h.settingsStore.GetBackupSettings()
+	storedHash := backupSettings["backup_passphrase_hash"]
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(passphrase)); err != nil {
+		h.renderToast(w, "error", "Incorrect passphrase")
+		return
+	}
+
+	householdID := auth.HouseholdID(r.Context())
+
+	if err := h.backupManager.Restore(r.Context(), backupID, householdID, passphrase); err != nil {
+		h.renderToast(w, "error", fmt.Sprintf("Restore failed: %v", err))
+		return
+	}
+}
+
+// BackupDownload streams an encrypted backup file.
+func (h *TemplateHandler) BackupDownload(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	backupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid backup ID", http.StatusBadRequest)
+		return
+	}
+
+	householdID := auth.HouseholdID(r.Context())
+
+	record, err := h.backupStore.GetByID(backupID, householdID)
+	if err != nil || record == nil {
+		http.Error(w, "Backup not found", http.StatusNotFound)
+		return
+	}
+
+	body, size, err := h.backupManager.Download(r.Context(), backupID, householdID)
+	if err != nil {
+		http.Error(w, "Download failed", http.StatusInternalServerError)
+		return
+	}
+	defer body.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", record.Filename))
+	if size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
+	io.Copy(w, body)
 }
