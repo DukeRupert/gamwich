@@ -1,0 +1,13 @@
+services:
+  gamwich:
+    image: dukerupert/gamwich:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - gamwich-data:/data
+    environment:
+      GAMWICH_DB_PATH: /data/gamwich.db
+    restart: unless-stopped
+
+volumes:
+  gamwich-data:
