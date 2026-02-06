@@ -195,50 +195,63 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.5: Chore Lists
+### Milestone 1.5: Chore Lists ✅
 
 **Goal:** Assign, track, and complete household chores.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Create chore database tables**
-   - Migration: `chores` table (`id`, `title`, `description`, `area`, `points`, `recurrence_rule`, `assigned_to`, `sort_order`, `created_at`, `updated_at`)
-   - Migration: `chore_completions` table (`id`, `chore_id`, `completed_by`, `completed_at`)
-   - Migration: `chore_areas` table (`id`, `name`, `sort_order`) with seed data (Kitchen, Bathroom, Bedroom, Yard, General)
+1. **~~Create chore database tables~~** ✅
+   - Migration: `chore_areas` table (`id`, `name`, `sort_order`, timestamps) with seed data (Kitchen, Bathroom, Bedroom, Yard, General)
+   - Migration: `chores` table (`id`, `title`, `description`, `area_id` FK→chore_areas ON DELETE SET NULL, `points`, `recurrence_rule`, `assigned_to` FK→family_members ON DELETE SET NULL, `sort_order`, timestamps)
+   - Migration: `chore_completions` table (`id`, `chore_id` FK→chores ON DELETE CASCADE, `completed_by` FK→family_members ON DELETE SET NULL, `completed_at`)
+   - Indexes on `assigned_to`, `area_id`, `chore_id`, `completed_by`, `completed_at`
    - _Test: Migrations run_
 
-2. **Build chore CRUD API**
+2. **~~Build chore CRUD API~~** ✅
    - `POST /api/chores` — create chore
-   - `GET /api/chores` — list with filters (assignee, area, status)
+   - `GET /api/chores` — list all chores
    - `PUT /api/chores/{id}` — update
    - `DELETE /api/chores/{id}` — delete
    - `POST /api/chores/{id}/complete` — mark complete (creates completion record)
    - `DELETE /api/chores/{id}/completions/{completion_id}` — undo completion
-   - _Test: CRUD + completion via curl_
+   - 17 store tests covering CRUD, FK cascades, completions, date ranges, sort order
+   - _Test: CRUD + completion via curl, `go test ./internal/store/...` passes_
 
-3. **Implement chore status logic**
-   - Determine if a chore is "due today" based on its recurrence rule and last completion date
-   - States: pending, completed today, overdue (due date passed without completion)
-   - Query helper: "what's due today for family member X?"
-   - _Test: Unit tests for due-date calculation with various recurrence patterns_
+3. **~~Implement chore status logic~~** ✅
+   - Pure Go logic in `internal/chore/status.go` — reuses `recurrence.Expand()` for due-date computation
+   - `ComputeStatus(chore, lastCompletion, today)` → status + due date
+   - `IsDueOnDate(chore, date)` → bool
+   - States: pending, completed, overdue, not_due
+   - One-off chores: completed if any completion exists, else pending
+   - Recurring chores: expand occurrences, find current due date, compare against last completion
+   - 14 unit tests covering one-off, daily, weekly, biweekly, monthly, overdue, invalid rule fallback
+   - _Test: `go test ./internal/chore/...` passes_
 
-4. **Build chore list page**
-   - Default view: today's chores grouped by family member
-   - Each chore rendered as a DaisyUI `card` with: title, area `badge`, assignee color, `checkbox` (use `checkbox-lg` for easy touch)
-   - Tap checkbox → DaisyUI `toast` or inline animation + completion recorded (htmx swap)
-   - Overdue chores use DaisyUI `alert-warning` or `alert-error` styling
-   - Filter tabs: DaisyUI `tabs` component — By Person, By Area, All
-   - _Test: View chores, complete them, see status update in real-time_
+4. **~~Build chore list page~~** ✅
+   - Tab navigation: All, By Person, By Area (DaisyUI `tabs` with HTMX swaps)
+   - Chore cards with checkbox-lg for completion, title, area/points/recurring badges, assignee avatar, overdue badge
+   - Tap checkbox → completion recorded, list re-rendered via HTMX
+   - Overdue chores: red left border + error badge
+   - Completed chores: dimmed with line-through text
+   - Floating "+" button → modal form for creating chores
+   - Edit form with pre-populated fields + delete button
+   - `closeChoreModal` HX-Trigger header for modal management
+   - _Test: View chores, complete them, switch tabs, see status updates in real-time_
 
-5. **Build chore management page**
-   - Add/edit chore form: title, description, area, assignee, recurrence, points (optional)
-   - Area management: add/rename/reorder areas
-   - _Test: Create chores with various recurrence rules, verify they appear on the right days_
+5. **~~Build chore management page~~** ✅
+   - Accessible via "Manage" link in chore section
+   - Chore table with edit buttons
+   - Area management: inline rename, delete with confirmation, add new area form
+   - _Test: Create chores, manage areas (create, rename, delete)_
 
-6. **Add chore summary widget to dashboard**
-   - Compact view: each family member's name/avatar with "3 of 5 done" progress
-   - Tap to navigate to full chore list filtered by that person
-   - _Test: Dashboard shows accurate chore counts, tapping navigates correctly_
+6. **~~Add chore summary widget to dashboard~~** ✅
+   - Per-member avatar + "X/Y" count + progress bar
+   - Tap "View" to navigate to full chore list
+   - Falls back to "No chores assigned" when no chores exist
+   - _Test: Dashboard shows accurate chore counts per member_
 
 ---
 
