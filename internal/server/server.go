@@ -17,6 +17,7 @@ type Server struct {
 	calendarEventH  *handler.CalendarEventHandler
 	choreH          *handler.ChoreHandler
 	groceryH        *handler.GroceryHandler
+	settingsH       *handler.SettingsHandler
 	templateHandler *handler.TemplateHandler
 }
 
@@ -27,6 +28,7 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 	eventStore := store.NewEventStore(db)
 	choreStore := store.NewChoreStore(db)
 	groceryStore := store.NewGroceryStore(db)
+	settingsStore := store.NewSettingsStore(db)
 
 	return &Server{
 		db:              db,
@@ -35,7 +37,8 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub),
 		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub),
 		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, weatherSvc, hub),
+		settingsH:       handler.NewSettingsHandler(settingsStore, hub),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, settingsStore, weatherSvc, hub),
 	}
 }
 
@@ -77,6 +80,10 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/grocery-lists/{list_id}/items/{id}/check", s.groceryH.ToggleChecked)
 	mux.HandleFunc("POST /api/grocery-lists/{list_id}/clear-checked", s.groceryH.ClearChecked)
 
+	// Settings API routes
+	mux.HandleFunc("GET /api/settings/kiosk", s.settingsH.GetKiosk)
+	mux.HandleFunc("PUT /api/settings/kiosk", s.settingsH.UpdateKiosk)
+
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
 	mux.HandleFunc("GET /calendar", s.templateHandler.CalendarPage)
@@ -99,6 +106,9 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /partials/grocery/items/{id}/edit", s.templateHandler.GroceryItemEditForm)
 	mux.HandleFunc("PUT /partials/grocery/items/{id}", s.templateHandler.GroceryItemUpdate)
 	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
+	mux.HandleFunc("GET /partials/settings/kiosk", s.templateHandler.KioskSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/kiosk", s.templateHandler.KioskSettingsUpdate)
+	mux.HandleFunc("GET /partials/idle/next-event", s.templateHandler.NextUpcomingEventPartial)
 
 	// Calendar view partials
 	mux.HandleFunc("GET /partials/calendar/day", s.templateHandler.CalendarDayPartial)

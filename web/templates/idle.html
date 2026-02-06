@@ -1,0 +1,11 @@
+{{define "idle-next-event"}}
+{{if .}}
+<div class="text-center">
+    <span class="opacity-60">Next:</span>
+    <span class="font-semibold">{{.Title}}</span>
+    <span class="opacity-60">at {{.StartTime.Format "3:04 PM"}}</span>
+</div>
+{{else}}
+<div></div>
+{{end}}
+{{end}}

@@ -365,32 +365,34 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.9: Touchscreen Kiosk Polish
+### Milestone 1.9: Touchscreen Kiosk Polish ✅
 
 **Goal:** Optimize the experience for a dedicated kitchen touchscreen running in kiosk mode.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Idle / screensaver mode**
+1. **~~Idle / screensaver mode~~** ✅
    - After configurable inactivity timeout (default 5 minutes), transition to idle mode
    - Idle mode: dimmed screen showing clock, date, and next upcoming event
    - Any touch returns to full dashboard
    - CSS `prefers-reduced-motion` respected
    - _Test: Leave app idle, screen dims, tap to wake_
 
-2. **Night mode scheduling**
+2. **~~Night mode scheduling~~** ✅
    - Configurable quiet hours (e.g., 10pm–6am)
    - During quiet hours: very dim display, minimal content
    - _Test: Set quiet hours, verify dimming activates on schedule_
 
-3. **Kiosk deployment documentation**
+3. **~~Kiosk deployment documentation~~** ✅
    - Raspberry Pi setup guide: OS, browser in kiosk mode, auto-start on boot
    - Chromium flags for kiosk: `--kiosk --noerrdialogs --disable-infobars`
    - Auto-restart on crash
    - Touchscreen calibration notes
    - _Test: Follow guide on a fresh Raspberry Pi, app runs in kiosk mode on boot_
 
-4. **Burn-in prevention**
+4. **~~Burn-in prevention~~** ✅
    - Subtle periodic pixel shift (1-2px every few minutes) during idle
    - Alternating dark/light elements in idle mode
    - _Test: Verify pixel shift is imperceptible but measurable_

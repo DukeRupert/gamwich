@@ -18,11 +18,49 @@
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: inline; }
         .htmx-request.htmx-indicator { display: inline; }
+        .night-mode { filter: brightness(0.15); transition: filter 1s ease; }
+        @media (prefers-reduced-motion: reduce) {
+            * { transition-duration: 0.01ms !important; }
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col bg-base-200 overflow-hidden"
       x-data="dashboardApp()"
-      x-init="startClock()">
+      x-init="startClock(); initKiosk()"
+      :class="{ 'night-mode': isNightMode && !isIdle }">
+
+    <!-- Idle Overlay -->
+    <div x-show="isIdle"
+         x-transition:enter="transition ease-out duration-700"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-300"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click="wakeFromIdle()"
+         @touchstart="wakeFromIdle()"
+         class="fixed inset-0 z-40 bg-base-300 flex flex-col items-center justify-center cursor-pointer select-none"
+         :style="pixelShiftStyle">
+        <div class="text-center">
+            <div class="text-8xl md:text-[12rem] font-mono tabular-nums font-bold"
+                 :class="isNightMode ? 'text-base-content/20' : 'text-base-content/80'"
+                 x-text="idleTime"></div>
+            <div class="text-2xl md:text-4xl mt-2"
+                 :class="isNightMode ? 'text-base-content/10' : 'text-base-content/50'"
+                 x-text="idleDate"></div>
+            <div class="mt-6"
+                 :class="isNightMode ? 'text-base-content/10' : 'text-base-content/40'"
+                 id="idle-next-event-container"
+                 hx-get="/partials/idle/next-event"
+                 hx-trigger="load, every 60s"
+                 hx-swap="innerHTML">
+            </div>
+            <div class="mt-8 text-sm"
+                 :class="isNightMode ? 'text-base-content/5' : 'text-base-content/25'">
+                Tap anywhere to wake
+            </div>
+        </div>
+    </div>
 
     <!-- Top Status Bar -->
     <header class="bg-base-100 shadow-md px-2 py-1.5 md:px-4 md:py-2 flex items-center justify-between flex-shrink-0">
@@ -142,16 +180,41 @@
             activeSection: '{{.ActiveSection}}',
             currentDate: '',
             currentTime: '',
+
+            // Kiosk state
+            isIdle: false,
+            isNightMode: false,
+            idleTime: '',
+            idleDate: '',
+            idleTimeoutMs: {{with index .KioskSettings "idle_timeout_minutes"}}{{.}}{{else}}5{{end}} * 60 * 1000,
+            quietHoursEnabled: {{with index .KioskSettings "quiet_hours_enabled"}}{{if eq . "true"}}true{{else}}false{{end}}{{else}}false{{end}},
+            quietHoursStart: '{{with index .KioskSettings "quiet_hours_start"}}{{.}}{{else}}22:00{{end}}',
+            quietHoursEnd: '{{with index .KioskSettings "quiet_hours_end"}}{{.}}{{else}}06:00{{end}}',
+            burnInPrevention: {{with index .KioskSettings "burn_in_prevention"}}{{if eq . "true"}}true{{else}}false{{end}}{{else}}true{{end}},
+            pixelShiftX: 0,
+            pixelShiftY: 0,
+            _idleTimer: null,
+            _idleClockInterval: null,
+            _nightModeInterval: null,
+            _pixelShiftInterval: null,
+
+            get pixelShiftStyle() {
+                if (!this.isIdle || !this.burnInPrevention) return '';
+                return 'transform: translate(' + this.pixelShiftX + 'px, ' + this.pixelShiftY + 'px)';
+            },
+
             init() {
                 document.body.dataset.activeSection = this.activeSection;
                 this.$watch('activeSection', val => {
                     document.body.dataset.activeSection = val;
                 });
             },
+
             startClock() {
                 this.updateClock();
                 setInterval(() => this.updateClock(), 1000);
             },
+
             updateClock() {
                 const now = new Date();
                 this.currentDate = now.toLocaleDateString('en-US', {
@@ -164,6 +227,100 @@
                     minute: '2-digit',
                     hour12: true
                 });
+            },
+
+            // --- Kiosk methods ---
+
+            initKiosk() {
+                var self = this;
+                var activityEvents = ['touchstart', 'mousedown', 'mousemove', 'keydown', 'scroll'];
+                activityEvents.forEach(function(evt) {
+                    document.addEventListener(evt, function() { self.resetIdleTimer(); }, { passive: true });
+                });
+                this.resetIdleTimer();
+                this.startNightModeCheck();
+                this.startPixelShift();
+            },
+
+            resetIdleTimer() {
+                if (this._idleTimer) clearTimeout(this._idleTimer);
+                if (this.isIdle) this.wakeFromIdle();
+                var self = this;
+                this._idleTimer = setTimeout(function() { self.enterIdleMode(); }, this.idleTimeoutMs);
+            },
+
+            enterIdleMode() {
+                this.isIdle = true;
+                this.updateIdleClock();
+                var self = this;
+                this._idleClockInterval = setInterval(function() { self.updateIdleClock(); }, 1000);
+            },
+
+            wakeFromIdle() {
+                this.isIdle = false;
+                if (this._idleClockInterval) {
+                    clearInterval(this._idleClockInterval);
+                    this._idleClockInterval = null;
+                }
+            },
+
+            updateIdleClock() {
+                var now = new Date();
+                this.idleTime = now.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                this.idleDate = now.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+            },
+
+            // --- Night mode ---
+
+            startNightModeCheck() {
+                this.checkNightMode();
+                var self = this;
+                this._nightModeInterval = setInterval(function() { self.checkNightMode(); }, 60000);
+            },
+
+            checkNightMode() {
+                if (!this.quietHoursEnabled) {
+                    this.isNightMode = false;
+                    return;
+                }
+                var now = new Date();
+                var currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+                var startParts = this.quietHoursStart.split(':');
+                var startMinutes = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+
+                var endParts = this.quietHoursEnd.split(':');
+                var endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+
+                if (startMinutes <= endMinutes) {
+                    // Same-day range (e.g., 08:00 - 18:00)
+                    this.isNightMode = currentMinutes >= startMinutes && currentMinutes < endMinutes;
+                } else {
+                    // Overnight range (e.g., 22:00 - 06:00)
+                    this.isNightMode = currentMinutes >= startMinutes || currentMinutes < endMinutes;
+                }
+            },
+
+            // --- Burn-in prevention ---
+
+            startPixelShift() {
+                if (!this.burnInPrevention) return;
+                var self = this;
+                this._pixelShiftInterval = setInterval(function() {
+                    if (!self.isIdle) return;
+                    var t = Date.now() / 150000 * Math.PI * 2;
+                    self.pixelShiftX = Math.round(Math.sin(t) * 2);
+                    self.pixelShiftY = Math.round(Math.cos(t) * 2);
+                }, 150000);
             }
         }
     }
@@ -245,6 +402,9 @@
             } else if (entity === 'family_member') {
                 // Refresh current section to pick up member changes
                 refreshSection(section);
+            } else if (entity === 'settings') {
+                // Settings changed on another screen — reload to pick up new kiosk config
+                window.location.reload();
             }
         }
 

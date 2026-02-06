@@ -24,28 +24,30 @@ import (
 const activeUserCookie = "gamwich_active_user"
 
 type TemplateHandler struct {
-	store        *store.FamilyMemberStore
-	eventStore   *store.EventStore
-	choreStore   *store.ChoreStore
-	groceryStore *store.GroceryStore
-	weatherSvc   *weather.Service
-	hub          *websocket.Hub
-	templates    *template.Template
+	store         *store.FamilyMemberStore
+	eventStore    *store.EventStore
+	choreStore    *store.ChoreStore
+	groceryStore  *store.GroceryStore
+	settingsStore *store.SettingsStore
+	weatherSvc    *weather.Service
+	hub           *websocket.Hub
+	templates     *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseGlob("web/templates/*.html"))
 	return &TemplateHandler{
-		store:        s,
-		eventStore:   es,
-		choreStore:   cs,
-		groceryStore: gs,
-		weatherSvc:   w,
-		hub:          hub,
-		templates:    tmpl,
+		store:         s,
+		eventStore:    es,
+		choreStore:    cs,
+		groceryStore:  gs,
+		settingsStore: ss,
+		weatherSvc:    w,
+		hub:           hub,
+		templates:     tmpl,
 	}
 }
 
@@ -64,12 +66,15 @@ func (h *TemplateHandler) buildDashboardData(r *http.Request, section string) (m
 
 	activeUserID := h.activeUserFromCookie(r)
 
+	kioskSettings, _ := h.settingsStore.GetKioskSettings()
+
 	data := map[string]any{
-		"Title":         "Gamwich",
-		"Members":       members,
-		"ActiveUserID":  activeUserID,
-		"ActiveSection": section,
-		"Weather":       h.weatherSvc.GetWeather(),
+		"Title":          "Gamwich",
+		"Members":        members,
+		"ActiveUserID":   activeUserID,
+		"ActiveSection":  section,
+		"Weather":        h.weatherSvc.GetWeather(),
+		"KioskSettings":  kioskSettings,
 	}
 	return data, nil
 }
@@ -1772,6 +1777,92 @@ func (h *TemplateHandler) buildGrocerySummaryData() (map[string]any, error) {
 // SettingsPartial renders the settings section for HTMX swap.
 func (h *TemplateHandler) SettingsPartial(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "settings-content", nil)
+}
+
+// KioskSettingsPartial renders the kiosk settings form for HTMX swap.
+func (h *TemplateHandler) KioskSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsStore.GetKioskSettings()
+	if err != nil {
+		log.Printf("get kiosk settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "kiosk-settings-form", settings)
+}
+
+// KioskSettingsUpdate handles PUT form submission for kiosk settings.
+func (h *TemplateHandler) KioskSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	settings := map[string]string{
+		"idle_timeout_minutes": r.FormValue("idle_timeout_minutes"),
+		"quiet_hours_enabled":  r.FormValue("quiet_hours_enabled"),
+		"quiet_hours_start":    r.FormValue("quiet_hours_start"),
+		"quiet_hours_end":      r.FormValue("quiet_hours_end"),
+		"burn_in_prevention":   r.FormValue("burn_in_prevention"),
+	}
+
+	// Normalize checkbox/toggle values
+	if settings["quiet_hours_enabled"] == "" || settings["quiet_hours_enabled"] == "on" {
+		if r.FormValue("quiet_hours_enabled") == "on" {
+			settings["quiet_hours_enabled"] = "true"
+		} else if r.FormValue("quiet_hours_enabled") == "" {
+			settings["quiet_hours_enabled"] = "false"
+		}
+	}
+	if settings["burn_in_prevention"] == "" || settings["burn_in_prevention"] == "on" {
+		if r.FormValue("burn_in_prevention") == "on" {
+			settings["burn_in_prevention"] = "true"
+		} else if r.FormValue("burn_in_prevention") == "" {
+			settings["burn_in_prevention"] = "false"
+		}
+	}
+
+	for key, value := range settings {
+		if err := h.settingsStore.Set(key, value); err != nil {
+			log.Printf("set setting %q: %v", key, err)
+			h.renderToast(w, "error", "Failed to save settings")
+			return
+		}
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	updated, err := h.settingsStore.GetKioskSettings()
+	if err != nil {
+		log.Printf("get kiosk settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Kiosk settings saved")
+	h.renderPartial(w, "kiosk-settings-form", updated)
+}
+
+// NextUpcomingEventPartial renders the next upcoming event for the idle screen.
+func (h *TemplateHandler) NextUpcomingEventPartial(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	rangeEnd := now.Add(24 * time.Hour)
+
+	events, err := h.expandEventsForRange(now, rangeEnd)
+	if err != nil {
+		log.Printf("expand events for idle: %v", err)
+		h.renderPartial(w, "idle-next-event", nil)
+		return
+	}
+
+	var nextEvent *expandedEvent
+	for i := range events {
+		if events[i].StartTime.After(now) && !events[i].AllDay {
+			nextEvent = &events[i]
+			break
+		}
+	}
+
+	h.renderPartial(w, "idle-next-event", nextEvent)
 }
 
 // WeatherPartial renders the weather widget for HTMX polling refresh.
