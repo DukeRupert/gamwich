@@ -10,25 +10,27 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.1: Project Scaffold & Family Members
+### Milestone 1.1: Project Scaffold & Family Members ✅
 
 **Goal:** Go project structure, database, and the ability to manage family members. The foundation everything else builds on.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Initialize Go module and project structure**
+1. **~~Initialize Go module and project structure~~** ✅
    - `go mod init gamwich`
    - Establish directory layout: `cmd/gamwich/`, `internal/`, `web/templates/`, `web/static/`, `db/migrations/`
    - Create `main.go` with basic HTTP server startup
    - _Test: `go run` starts and serves a "Hello Gamwich" page_
 
-2. **Set up SQLite database layer**
+2. **~~Set up SQLite database layer~~** ✅
    - Choose driver (`modernc.org/sqlite` for pure Go, no CGO)
    - Create migration runner (embed SQL files with `embed` package)
    - Write initial migration: `family_members` table (`id`, `name`, `color`, `avatar_emoji`, `pin`, `sort_order`, `created_at`, `updated_at`)
    - _Test: App starts, runs migrations, DB file created_
 
-3. **Create family member CRUD API**
+3. **~~Create family member CRUD API~~** ✅
    - `POST /api/family-members` — create
    - `GET /api/family-members` — list all
    - `PUT /api/family-members/{id}` — update
@@ -36,7 +38,7 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
    - Validate: name required, color format (hex), unique name
    - _Test: curl/httpie against all endpoints_
 
-4. **Build family member management page**
+4. **~~Build family member management page~~** ✅
    - Go template layout: base template with nav shell, content block
    - Tailwind CSS + DaisyUI setup (CDN for now, build step later)
    - DaisyUI provides the component foundation: large buttons, cards, badges, modals, form inputs — all touch-friendly out of the box
@@ -44,13 +46,15 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
    - Family member list with colored avatars (DaisyUI `avatar` + `badge` components)
    - htmx-powered add/edit/delete forms (inline editing, no page reloads)
    - Color picker for member color assignment
-   - Drag-to-reorder with Alpine.js (sort_order)
+   - Drag-to-reorder with Alpine.js (sort_order) — _API ready, UI drag not yet wired_
+   - Global toast notification system (htmx OOB swaps, auto-dismiss)
    - _Test: Add, edit, reorder, and delete family members from the browser_
 
-5. **Implement PIN selection for family members**
+5. **~~Implement PIN selection for family members~~** ✅
    - Optional 4-digit PIN per member
    - PIN entry component (large touchscreen-friendly number pad)
-   - Store PIN hashed in DB
+   - Store PIN hashed (bcrypt) in DB
+   - Changing or removing an existing PIN requires verifying the current PIN first
    - _Test: Set a PIN, verify PIN entry works on the family member page_
 
 ---
