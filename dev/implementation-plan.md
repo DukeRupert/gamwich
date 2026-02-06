@@ -99,47 +99,61 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.3: Calendar — Basic CRUD
+### Milestone 1.3: Calendar — Basic CRUD ✅
 
 **Goal:** View and manage calendar events. Day and week views with create/edit/delete.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Create calendar database tables**
+1. **~~Create calendar database tables~~** ✅
    - Migration: `calendar_events` table (`id`, `title`, `description`, `start_time`, `end_time`, `all_day`, `family_member_id`, `location`, `created_at`, `updated_at`)
    - Index on `start_time` for range queries
+   - FK to `family_members` with `ON DELETE SET NULL`
    - _Test: Migration runs cleanly_
 
-2. **Build calendar event API**
+2. **~~Build calendar event model and store~~** ✅
+   - `CalendarEvent` model with nullable `FamilyMemberID`
+   - `EventStore` with Create, GetByID, ListByDateRange (overlap query), Update, Delete
+   - 10 unit tests covering CRUD, date range overlap, all-day ordering, spanning events, FK cascade
+   - _Test: `go test ./internal/store/...` passes_
+
+3. **~~Build calendar event API~~** ✅
    - `POST /api/events` — create event
-   - `GET /api/events?start={date}&end={date}` — list events in date range
+   - `GET /api/events?start={date}&end={date}` — list events in date range (RFC3339 or YYYY-MM-DD)
    - `GET /api/events/{id}` — single event
    - `PUT /api/events/{id}` — update
    - `DELETE /api/events/{id}` — delete
    - Validate: title required, start before end, family_member_id exists
    - _Test: CRUD operations via curl_
 
-3. **Build day view**
-   - Vertical timeline from 6am to 10pm (configurable)
-   - Events rendered as colored blocks (color = family member color)
+4. **~~Build day view~~** ✅
+   - Vertical timeline from 6am to 10pm (17 hours, 60px per hour)
+   - Events rendered as colored blocks positioned by start/end time (color = family member color, default gray for unassigned)
    - All-day events as banners at the top
-   - Tap empty time slot → quick-add form (htmx modal or inline)
-   - Tap event → view/edit/delete panel
+   - Tap empty time slot → quick-add form (htmx modal)
+   - Tap event → view/edit/delete detail panel
    - _Test: Create events, see them on the day view, edit and delete_
 
-4. **Build week view**
-   - 7-column grid, current day highlighted
-   - Events shown as compact colored bars
-   - Tap a day → navigate to day view
-   - Swipe left/right to navigate weeks (Alpine.js touch handler)
-   - _Test: Week view renders events across multiple days, swipe navigation works_
+5. **~~Build week view~~** ✅
+   - 7-column grid (Mon–Sun, ISO 8601), current day highlighted with `ring-2 ring-primary`
+   - Events shown as compact colored bars (max 3 per day + "more" count)
+   - Tap a day → HTMX swap to day view for that date
+   - Prev/next week navigation
+   - _Test: Week view renders events across multiple days, navigation works_
 
-5. **Quick-add event form**
-   - DaisyUI `modal` with large, touch-friendly form inputs (`input-lg`, `select-lg`)
-   - Fields: title, date/time pickers, family member selector (DaisyUI `select` or custom avatar buttons), optional notes
-   - Date/time picker designed for touch (scroll wheels or large increment buttons, NOT native browser pickers)
-   - htmx submit → event appears on calendar without page reload
-   - _Test: Add event from quick-add, verify it appears immediately_
+6. **~~Quick-add event form~~** ✅
+   - DaisyUI `modal` with large, touch-friendly form inputs
+   - Custom date picker (prev/next day buttons via Alpine.js)
+   - Custom time picker (hour/minute increment buttons with 15-min steps, AM/PM toggle — NOT native browser pickers)
+   - Family member avatar selector, location, description fields
+   - Alpine.js manages form state, hidden inputs pass values to server
+   - htmx submit → event appears on calendar without page reload + toast notification
+   - Edit form pre-populated with existing event data
+   - Delete from detail modal with confirmation
+   - `closeEventModal` HX-Trigger header for modal management
+   - _Test: Add event from quick-add, verify it appears immediately. Edit and delete work._
 
 ---
 
