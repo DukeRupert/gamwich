@@ -106,9 +106,9 @@ func TestSettingsGetAll(t *testing.T) {
 		t.Fatalf("get all: %v", err)
 	}
 
-	// Should have at least the 5 seed settings
-	if len(all) < 5 {
-		t.Fatalf("expected at least 5 settings, got %d", len(all))
+	// Should have at least the 8 seed settings (5 kiosk + 3 weather)
+	if len(all) < 8 {
+		t.Fatalf("expected at least 8 settings, got %d", len(all))
 	}
 
 	if all["idle_timeout_minutes"] != "5" {
@@ -135,5 +135,82 @@ func TestSettingsGetKioskSettings(t *testing.T) {
 
 	if _, ok := kiosk["non_kiosk_key"]; ok {
 		t.Error("non-kiosk key should not be in kiosk settings")
+	}
+}
+
+func TestSettingsWeatherSeedData(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	settings, err := ss.GetWeatherSettings()
+	if err != nil {
+		t.Fatalf("get weather settings: %v", err)
+	}
+
+	expected := map[string]string{
+		"weather_latitude":  "",
+		"weather_longitude": "",
+		"weather_units":     "fahrenheit",
+	}
+
+	for key, want := range expected {
+		got, ok := settings[key]
+		if !ok {
+			t.Errorf("missing weather setting %q", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("setting %q = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestSettingsGetWeatherSettings(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	// Add a non-weather setting
+	if err := ss.Set("non_weather_key", "value"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	weather, err := ss.GetWeatherSettings()
+	if err != nil {
+		t.Fatalf("get weather: %v", err)
+	}
+
+	if len(weather) != 3 {
+		t.Fatalf("expected 3 weather settings, got %d", len(weather))
+	}
+
+	if _, ok := weather["non_weather_key"]; ok {
+		t.Error("non-weather key should not be in weather settings")
+	}
+}
+
+func TestSettingsWeatherUpdate(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	if err := ss.Set("weather_latitude", "47.6062"); err != nil {
+		t.Fatalf("set lat: %v", err)
+	}
+	if err := ss.Set("weather_longitude", "-122.3321"); err != nil {
+		t.Fatalf("set lon: %v", err)
+	}
+	if err := ss.Set("weather_units", "celsius"); err != nil {
+		t.Fatalf("set units: %v", err)
+	}
+
+	settings, err := ss.GetWeatherSettings()
+	if err != nil {
+		t.Fatalf("get weather: %v", err)
+	}
+
+	if settings["weather_latitude"] != "47.6062" {
+		t.Errorf("latitude = %q, want %q", settings["weather_latitude"], "47.6062")
+	}
+	if settings["weather_longitude"] != "-122.3321" {
+		t.Errorf("longitude = %q, want %q", settings["weather_longitude"], "-122.3321")
+	}
+	if settings["weather_units"] != "celsius" {
+		t.Errorf("units = %q, want %q", settings["weather_units"], "celsius")
 	}
 }

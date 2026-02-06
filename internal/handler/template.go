@@ -1842,6 +1842,73 @@ func (h *TemplateHandler) KioskSettingsUpdate(w http.ResponseWriter, r *http.Req
 	h.renderPartial(w, "kiosk-settings-form", updated)
 }
 
+// WeatherSettingsPartial renders the weather settings form for HTMX swap.
+func (h *TemplateHandler) WeatherSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsStore.GetWeatherSettings()
+	if err != nil {
+		log.Printf("get weather settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "weather-settings-form", settings)
+}
+
+// WeatherSettingsUpdate handles PUT form submission for weather settings.
+func (h *TemplateHandler) WeatherSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	settings := map[string]string{
+		"weather_latitude":  strings.TrimSpace(r.FormValue("weather_latitude")),
+		"weather_longitude": strings.TrimSpace(r.FormValue("weather_longitude")),
+		"weather_units":     r.FormValue("weather_units"),
+	}
+
+	// Validate lat/lon are valid floats (or empty)
+	for _, key := range []string{"weather_latitude", "weather_longitude"} {
+		if v := settings[key]; v != "" {
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				h.renderToast(w, "error", fmt.Sprintf("Invalid %s value", key))
+				return
+			}
+		}
+	}
+
+	// Validate units
+	if settings["weather_units"] != "fahrenheit" && settings["weather_units"] != "celsius" {
+		h.renderToast(w, "error", "Temperature unit must be fahrenheit or celsius")
+		return
+	}
+
+	for key, value := range settings {
+		if err := h.settingsStore.Set(key, value); err != nil {
+			log.Printf("set setting %q: %v", key, err)
+			h.renderToast(w, "error", "Failed to save settings")
+			return
+		}
+	}
+
+	h.weatherSvc.UpdateConfig(weather.Config{
+		Latitude:        settings["weather_latitude"],
+		Longitude:       settings["weather_longitude"],
+		TemperatureUnit: settings["weather_units"],
+	})
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	updated, err := h.settingsStore.GetWeatherSettings()
+	if err != nil {
+		log.Printf("get weather settings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderToast(w, "success", "Weather settings saved")
+	h.renderPartial(w, "weather-settings-form", updated)
+}
+
 // NextUpcomingEventPartial renders the next upcoming event for the idle screen.
 func (h *TemplateHandler) NextUpcomingEventPartial(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()

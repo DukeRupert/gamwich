@@ -61,6 +61,27 @@ func NewService(cfg Config) *Service {
 	}
 }
 
+// UpdateConfig updates the weather service configuration and clears the cache.
+func (s *Service) UpdateConfig(cfg Config) {
+	if cfg.TemperatureUnit == "" {
+		cfg.TemperatureUnit = "fahrenheit"
+	}
+	unit := "F"
+	if cfg.TemperatureUnit == "celsius" {
+		unit = "C"
+	}
+	configured := cfg.Latitude != "" && cfg.Longitude != ""
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config = cfg
+	s.cached = WeatherData{
+		Unit:       unit,
+		Configured: configured,
+	}
+	s.lastFetch = time.Time{}
+}
+
 // GetWeather returns the current weather data, fetching from the API if the cache is stale.
 func (s *Service) GetWeather() WeatherData {
 	if !s.cached.Configured {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/server"
+	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
 )
 
@@ -32,10 +33,23 @@ func main() {
 	}
 	defer db.Close()
 
+	// Read weather config: DB values take priority, env vars as fallback
 	weatherCfg := weather.Config{
 		Latitude:        os.Getenv("GAMWICH_WEATHER_LAT"),
 		Longitude:       os.Getenv("GAMWICH_WEATHER_LON"),
 		TemperatureUnit: os.Getenv("GAMWICH_WEATHER_UNITS"),
+	}
+	settingsStore := store.NewSettingsStore(db)
+	if dbWeather, err := settingsStore.GetWeatherSettings(); err == nil {
+		if v := dbWeather["weather_latitude"]; v != "" {
+			weatherCfg.Latitude = v
+		}
+		if v := dbWeather["weather_longitude"]; v != "" {
+			weatherCfg.Longitude = v
+		}
+		if v := dbWeather["weather_units"]; v != "" {
+			weatherCfg.TemperatureUnit = v
+		}
 	}
 	if weatherCfg.TemperatureUnit == "" {
 		weatherCfg.TemperatureUnit = "fahrenheit"

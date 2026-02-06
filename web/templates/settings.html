@@ -43,7 +43,12 @@
                     </svg>
                     Weather
                 </h2>
-                <p class="text-base-content/60">Configure via environment variables: <code class="text-xs">GAMWICH_WEATHER_LAT</code>, <code class="text-xs">GAMWICH_WEATHER_LON</code>, <code class="text-xs">GAMWICH_WEATHER_UNITS</code></p>
+                <div id="weather-settings-container"
+                     hx-get="/partials/settings/weather"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -106,6 +111,64 @@
         </label>
         <p class="text-xs text-base-content/50 ml-1">Subtle pixel shift during idle to prevent screen burn-in.</p>
     </div>
+
+    <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
+</form>
+{{end}}
+
+{{define "weather-settings-form"}}
+<form hx-put="/partials/settings/weather"
+      hx-target="#weather-settings-container"
+      hx-swap="innerHTML"
+      class="space-y-4"
+      x-data="{ units: '{{index . "weather_units"}}' }">
+
+    <!-- Latitude -->
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text font-medium">Latitude</span>
+        </label>
+        <input type="text" name="weather_latitude"
+               value="{{index . "weather_latitude"}}"
+               placeholder="e.g. 47.6062"
+               class="input input-bordered input-sm w-full"
+               inputmode="decimal">
+    </div>
+
+    <!-- Longitude -->
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text font-medium">Longitude</span>
+        </label>
+        <input type="text" name="weather_longitude"
+               value="{{index . "weather_longitude"}}"
+               placeholder="e.g. -122.3321"
+               class="input input-bordered input-sm w-full"
+               inputmode="decimal">
+    </div>
+
+    <!-- Temperature Unit -->
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text font-medium">Temperature unit</span>
+        </label>
+        <div class="flex gap-2">
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="weather_units" value="fahrenheit"
+                       class="radio radio-primary radio-sm"
+                       x-model="units">
+                <span class="label-text">Fahrenheit</span>
+            </label>
+            <label class="label cursor-pointer gap-2">
+                <input type="radio" name="weather_units" value="celsius"
+                       class="radio radio-primary radio-sm"
+                       x-model="units">
+                <span class="label-text">Celsius</span>
+            </label>
+        </div>
+    </div>
+
+    <p class="text-xs text-base-content/50">Leave latitude and longitude empty to disable the weather widget.</p>
 
     <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
 </form>

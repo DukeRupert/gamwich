@@ -14,6 +14,12 @@ var kioskKeys = []string{
 	"burn_in_prevention",
 }
 
+var weatherKeys = []string{
+	"weather_latitude",
+	"weather_longitude",
+	"weather_units",
+}
+
 type SettingsStore struct {
 	db *sql.DB
 }
@@ -73,6 +79,22 @@ func (s *SettingsStore) GetKioskSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get kiosk setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetWeatherSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range weatherKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get weather setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

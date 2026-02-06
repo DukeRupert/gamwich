@@ -37,7 +37,7 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub),
 		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub),
 		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
-		settingsH:       handler.NewSettingsHandler(settingsStore, hub),
+		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
 		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, settingsStore, weatherSvc, hub),
 	}
 }
@@ -83,6 +83,8 @@ func (s *Server) Router() http.Handler {
 	// Settings API routes
 	mux.HandleFunc("GET /api/settings/kiosk", s.settingsH.GetKiosk)
 	mux.HandleFunc("PUT /api/settings/kiosk", s.settingsH.UpdateKiosk)
+	mux.HandleFunc("GET /api/settings/weather", s.settingsH.GetWeather)
+	mux.HandleFunc("PUT /api/settings/weather", s.settingsH.UpdateWeather)
 
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
@@ -108,6 +110,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
 	mux.HandleFunc("GET /partials/settings/kiosk", s.templateHandler.KioskSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/kiosk", s.templateHandler.KioskSettingsUpdate)
+	mux.HandleFunc("GET /partials/settings/weather", s.templateHandler.WeatherSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/weather", s.templateHandler.WeatherSettingsUpdate)
 	mux.HandleFunc("GET /partials/idle/next-event", s.templateHandler.NextUpcomingEventPartial)
 
 	// Calendar view partials
