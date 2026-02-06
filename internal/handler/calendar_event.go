@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/model"
+	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
 )
 
@@ -28,6 +30,7 @@ type eventRequest struct {
 	AllDay         bool   `json:"all_day"`
 	FamilyMemberID *int64 `json:"family_member_id"`
 	Location       string `json:"location"`
+	RecurrenceRule string `json:"recurrence_rule"`
 }
 
 func (h *CalendarEventHandler) parseAndValidate(r *http.Request, w http.ResponseWriter) (*eventRequest, time.Time, time.Time, bool) {
@@ -81,7 +84,7 @@ func (h *CalendarEventHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := h.eventStore.Create(req.Title, req.Description, startTime, endTime, req.AllDay, req.FamilyMemberID, req.Location)
+	event, err := h.eventStore.CreateWithRecurrence(req.Title, req.Description, startTime, endTime, req.AllDay, req.FamilyMemberID, req.Location, req.RecurrenceRule)
 	if err != nil {
 		log.Printf("failed to create calendar event: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create event"})
@@ -112,6 +115,7 @@ func (h *CalendarEventHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get non-recurring events
 	events, err := h.eventStore.ListByDateRange(start, end)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list events"})
@@ -120,6 +124,54 @@ func (h *CalendarEventHandler) List(w http.ResponseWriter, r *http.Request) {
 	if events == nil {
 		events = []model.CalendarEvent{}
 	}
+
+	// Expand recurring events
+	recurring, err := h.eventStore.ListRecurring(end)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list recurring events"})
+		return
+	}
+
+	for _, parent := range recurring {
+		rule, err := recurrence.Parse(parent.RecurrenceRule)
+		if err != nil {
+			log.Printf("skip recurring event %d: invalid rule: %v", parent.ID, err)
+			continue
+		}
+
+		occurrences := recurrence.Expand(rule, parent.StartTime, parent.EndTime, start, end)
+
+		exceptions, err := h.eventStore.ListExceptions(parent.ID)
+		if err != nil {
+			continue
+		}
+
+		excMap := make(map[string]model.CalendarEvent)
+		for _, exc := range exceptions {
+			if exc.OriginalStartTime != nil {
+				excMap[exc.OriginalStartTime.Format("2006-01-02T15:04:05Z")] = exc
+			}
+		}
+
+		for _, occ := range occurrences {
+			key := occ.Start.Format("2006-01-02T15:04:05Z")
+			if exc, found := excMap[key]; found {
+				if exc.Cancelled {
+					continue
+				}
+				events = append(events, exc)
+			} else {
+				virtual := parent
+				virtual.StartTime = occ.Start
+				virtual.EndTime = occ.End
+				events = append(events, virtual)
+			}
+		}
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].StartTime.Before(events[j].StartTime)
+	})
 
 	writeJSON(w, http.StatusOK, events)
 }
@@ -166,7 +218,7 @@ func (h *CalendarEventHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := h.eventStore.Update(id, req.Title, req.Description, startTime, endTime, req.AllDay, req.FamilyMemberID, req.Location)
+	event, err := h.eventStore.UpdateWithRecurrence(id, req.Title, req.Description, startTime, endTime, req.AllDay, req.FamilyMemberID, req.Location, req.RecurrenceRule)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update event"})
 		return

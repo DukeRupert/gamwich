@@ -6,11 +6,13 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/model"
+	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
 	"golang.org/x/crypto/bcrypt"
@@ -237,7 +239,18 @@ func (h *TemplateHandler) CalendarEventDetail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	data := h.buildEventDetailData(event)
+	// Check query params for recurring event context
+	isRecurring := r.URL.Query().Get("recurring") == "1"
+	parentID, _ := strconv.ParseInt(r.URL.Query().Get("parent_id"), 10, 64)
+	occurrenceDate := r.URL.Query().Get("occurrence_date")
+
+	// If this event itself is a recurring parent, mark it as such
+	if event.RecurrenceRule != "" {
+		isRecurring = true
+		parentID = event.ID
+	}
+
+	data := h.buildEventDetailData(event, isRecurring, parentID, occurrenceDate)
 	h.renderPartial(w, "calendar-event-detail", data)
 }
 
@@ -316,7 +329,9 @@ func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if _, err := h.eventStore.Create(title, description, startTime, endTime, allDay, familyMemberID, location); err != nil {
+	recurrenceRule := r.FormValue("recurrence_rule")
+
+	if _, err := h.eventStore.CreateWithRecurrence(title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
 		log.Printf("create event: %v", err)
 		http.Error(w, "failed to create event", http.StatusInternalServerError)
 		return
@@ -359,21 +374,31 @@ func (h *TemplateHandler) CalendarEventEditForm(w http.ResponseWriter, r *http.R
 		familyMemberID = *event.FamilyMemberID
 	}
 
+	// For recurring events, accept mode/occurrence context from query params
+	mode := r.URL.Query().Get("mode")
+	parentID, _ := strconv.ParseInt(r.URL.Query().Get("parent_id"), 10, 64)
+	occurrenceDate := r.URL.Query().Get("occurrence_date")
+
 	data := map[string]any{
-		"ID":             event.ID,
-		"Title":          event.Title,
-		"Description":    event.Description,
-		"Location":       event.Location,
-		"AllDay":         event.AllDay,
-		"DateYear":       event.StartTime.Year(),
-		"DateMonth":      int(event.StartTime.Month()),
-		"DateDay":        event.StartTime.Day(),
-		"StartHour":      event.StartTime.Hour(),
-		"StartMinute":    event.StartTime.Minute(),
-		"EndHour":        event.EndTime.Hour(),
-		"EndMinute":      event.EndTime.Minute(),
-		"FamilyMemberID": familyMemberID,
-		"Members":        members,
+		"ID":              event.ID,
+		"Title":           event.Title,
+		"Description":     event.Description,
+		"Location":        event.Location,
+		"AllDay":          event.AllDay,
+		"DateYear":        event.StartTime.Year(),
+		"DateMonth":       int(event.StartTime.Month()),
+		"DateDay":         event.StartTime.Day(),
+		"StartHour":       event.StartTime.Hour(),
+		"StartMinute":     event.StartTime.Minute(),
+		"EndHour":         event.EndTime.Hour(),
+		"EndMinute":       event.EndTime.Minute(),
+		"FamilyMemberID":  familyMemberID,
+		"Members":         members,
+		"RecurrenceRule":  event.RecurrenceRule,
+		"Mode":            mode,
+		"ParentID":        parentID,
+		"OccurrenceDate":  occurrenceDate,
+		"IsRecurring":     event.RecurrenceRule != "" || parentID > 0,
 	}
 
 	h.renderPartial(w, "event-edit-form", data)
@@ -436,10 +461,57 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if _, err := h.eventStore.Update(id, title, description, startTime, endTime, allDay, familyMemberID, location); err != nil {
-		log.Printf("update event: %v", err)
-		http.Error(w, "failed to update event", http.StatusInternalServerError)
-		return
+	recurrenceRule := r.FormValue("recurrence_rule")
+	mode := r.FormValue("mode")
+	parentIDStr := r.FormValue("parent_id")
+	occurrenceDateStr := r.FormValue("occurrence_date")
+
+	switch mode {
+	case "single":
+		// Create an exception for this occurrence
+		parentID, _ := strconv.ParseInt(parentIDStr, 10, 64)
+		if parentID == 0 {
+			parentID = id
+		}
+		parent, err := h.eventStore.GetByID(parentID)
+		if err != nil || parent == nil {
+			http.Error(w, "parent event not found", http.StatusNotFound)
+			return
+		}
+		origStart := parent.StartTime
+		if occurrenceDateStr != "" {
+			if od, err := time.Parse("2006-01-02", occurrenceDateStr); err == nil {
+				origStart = time.Date(od.Year(), od.Month(), od.Day(), parent.StartTime.Hour(), parent.StartTime.Minute(), 0, 0, time.UTC)
+			}
+		}
+		if _, err := h.eventStore.CreateException(parentID, origStart, title, description, startTime, endTime, allDay, familyMemberID, location, false); err != nil {
+			log.Printf("create exception: %v", err)
+			http.Error(w, "failed to create exception", http.StatusInternalServerError)
+			return
+		}
+
+	case "all":
+		// Update the parent event directly and delete all exceptions
+		parentID, _ := strconv.ParseInt(parentIDStr, 10, 64)
+		if parentID == 0 {
+			parentID = id
+		}
+		if err := h.eventStore.DeleteExceptions(parentID); err != nil {
+			log.Printf("delete exceptions: %v", err)
+		}
+		if _, err := h.eventStore.UpdateWithRecurrence(parentID, title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
+			log.Printf("update event: %v", err)
+			http.Error(w, "failed to update event", http.StatusInternalServerError)
+			return
+		}
+
+	default:
+		// Non-recurring or simple update
+		if _, err := h.eventStore.UpdateWithRecurrence(id, title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
+			log.Printf("update event: %v", err)
+			http.Error(w, "failed to update event", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("HX-Trigger", "closeEventModal")
@@ -473,9 +545,52 @@ func (h *TemplateHandler) CalendarEventDeleteForm(w http.ResponseWriter, r *http
 
 	date := event.StartTime
 
-	if err := h.eventStore.Delete(id); err != nil {
-		http.Error(w, "failed to delete event", http.StatusInternalServerError)
-		return
+	mode := r.URL.Query().Get("mode")
+	parentIDStr := r.URL.Query().Get("parent_id")
+	occurrenceDateStr := r.URL.Query().Get("occurrence_date")
+
+	switch mode {
+	case "single":
+		// Create a cancelled exception
+		parentID, _ := strconv.ParseInt(parentIDStr, 10, 64)
+		if parentID == 0 {
+			parentID = id
+		}
+		parent, err := h.eventStore.GetByID(parentID)
+		if err != nil || parent == nil {
+			http.Error(w, "parent event not found", http.StatusNotFound)
+			return
+		}
+		origStart := parent.StartTime
+		if occurrenceDateStr != "" {
+			if od, err := time.Parse("2006-01-02", occurrenceDateStr); err == nil {
+				origStart = time.Date(od.Year(), od.Month(), od.Day(), parent.StartTime.Hour(), parent.StartTime.Minute(), 0, 0, time.UTC)
+				date = od
+			}
+		}
+		if _, err := h.eventStore.CreateException(parentID, origStart, parent.Title, parent.Description, origStart, origStart.Add(parent.EndTime.Sub(parent.StartTime)), parent.AllDay, parent.FamilyMemberID, parent.Location, true); err != nil {
+			log.Printf("create cancelled exception: %v", err)
+			http.Error(w, "failed to delete occurrence", http.StatusInternalServerError)
+			return
+		}
+
+	case "all":
+		// Delete the parent (CASCADE removes exceptions)
+		parentID, _ := strconv.ParseInt(parentIDStr, 10, 64)
+		if parentID == 0 {
+			parentID = id
+		}
+		if err := h.eventStore.Delete(parentID); err != nil {
+			http.Error(w, "failed to delete event series", http.StatusInternalServerError)
+			return
+		}
+
+	default:
+		// Non-recurring delete
+		if err := h.eventStore.Delete(id); err != nil {
+			http.Error(w, "failed to delete event", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("HX-Trigger", "closeEventModal")
@@ -487,6 +602,44 @@ func (h *TemplateHandler) CalendarEventDeleteForm(w http.ResponseWriter, r *http
 	}
 	h.renderToast(w, "success", "Event deleted")
 	h.renderPartial(w, "calendar-day-view", data)
+}
+
+// RecurrenceEditChoice renders the edit mode choice dialog for recurring events.
+func (h *TemplateHandler) RecurrenceEditChoice(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	parentID, _ := strconv.ParseInt(r.URL.Query().Get("parent_id"), 10, 64)
+	occurrenceDate := r.URL.Query().Get("occurrence_date")
+
+	data := map[string]any{
+		"ID":             id,
+		"ParentID":       parentID,
+		"OccurrenceDate": occurrenceDate,
+	}
+	h.renderPartial(w, "recurrence-edit-choice", data)
+}
+
+// RecurrenceDeleteChoice renders the delete mode choice dialog for recurring events.
+func (h *TemplateHandler) RecurrenceDeleteChoice(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	parentID, _ := strconv.ParseInt(r.URL.Query().Get("parent_id"), 10, 64)
+	occurrenceDate := r.URL.Query().Get("occurrence_date")
+
+	data := map[string]any{
+		"ID":             id,
+		"ParentID":       parentID,
+		"OccurrenceDate": occurrenceDate,
+	}
+	h.renderPartial(w, "recurrence-delete-choice", data)
 }
 
 // ChoresPartial renders the chores placeholder for HTMX swap.
@@ -925,18 +1078,22 @@ func (h *TemplateHandler) PINSetup(w http.ResponseWriter, r *http.Request) {
 // --- Calendar helper types and methods ---
 
 type dayViewEvent struct {
-	ID          int64
-	Title       string
-	Color       string
-	MemberEmoji string
-	TimeRange   string
-	TopPx       int
-	HeightPx    int
+	ID             int64
+	Title          string
+	Color          string
+	MemberEmoji    string
+	TimeRange      string
+	TopPx          int
+	HeightPx       int
+	IsRecurring    bool
+	ParentID       int64
+	OccurrenceDate string
 }
 
 type weekDayEvent struct {
-	Title string
-	Color string
+	Title       string
+	Color       string
+	IsRecurring bool
 }
 
 type weekDay struct {
@@ -983,13 +1140,107 @@ func (h *TemplateHandler) buildCalendarViewContent(view string, date time.Time) 
 	return h.renderSection(templateName, data)
 }
 
+// expandedEvent is a flattened event including virtual occurrences of recurring events.
+type expandedEvent struct {
+	model.CalendarEvent
+	IsRecurring    bool
+	ParentID       int64
+	OccurrenceDate string // "2006-01-02" for identifying specific occurrences
+}
+
+// expandEventsForRange returns both non-recurring and expanded recurring events for a date range.
+func (h *TemplateHandler) expandEventsForRange(rangeStart, rangeEnd time.Time) ([]expandedEvent, error) {
+	// 1. Get non-recurring events
+	nonRecurring, err := h.eventStore.ListByDateRange(rangeStart, rangeEnd)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+
+	var results []expandedEvent
+	for _, e := range nonRecurring {
+		results = append(results, expandedEvent{
+			CalendarEvent:  e,
+			OccurrenceDate: e.StartTime.Format("2006-01-02"),
+		})
+	}
+
+	// 2. Get recurring parent events
+	recurring, err := h.eventStore.ListRecurring(rangeEnd)
+	if err != nil {
+		return nil, fmt.Errorf("list recurring: %w", err)
+	}
+
+	// 3. Expand each recurring event
+	for _, parent := range recurring {
+		rule, err := recurrence.Parse(parent.RecurrenceRule)
+		if err != nil {
+			log.Printf("skip recurring event %d: invalid rule %q: %v", parent.ID, parent.RecurrenceRule, err)
+			continue
+		}
+
+		occurrences := recurrence.Expand(rule, parent.StartTime, parent.EndTime, rangeStart, rangeEnd)
+
+		// Get exceptions for this parent
+		exceptions, err := h.eventStore.ListExceptions(parent.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list exceptions for %d: %w", parent.ID, err)
+		}
+
+		// Build exception lookup by original start time (date-only key)
+		excMap := make(map[string]model.CalendarEvent)
+		for _, exc := range exceptions {
+			if exc.OriginalStartTime != nil {
+				key := exc.OriginalStartTime.Format("2006-01-02T15:04:05Z")
+				excMap[key] = exc
+			}
+		}
+
+		for _, occ := range occurrences {
+			key := occ.Start.Format("2006-01-02T15:04:05Z")
+			if exc, found := excMap[key]; found {
+				if exc.Cancelled {
+					continue // skip cancelled occurrence
+				}
+				// Use exception's data
+				results = append(results, expandedEvent{
+					CalendarEvent:  exc,
+					IsRecurring:    true,
+					ParentID:       parent.ID,
+					OccurrenceDate: occ.Start.Format("2006-01-02"),
+				})
+			} else {
+				// Virtual occurrence from parent data
+				virtual := parent
+				virtual.StartTime = occ.Start
+				virtual.EndTime = occ.End
+				results = append(results, expandedEvent{
+					CalendarEvent:  virtual,
+					IsRecurring:    true,
+					ParentID:       parent.ID,
+					OccurrenceDate: occ.Start.Format("2006-01-02"),
+				})
+			}
+		}
+	}
+
+	// Sort: all-day first, then by start time
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].AllDay != results[j].AllDay {
+			return results[i].AllDay
+		}
+		return results[i].StartTime.Before(results[j].StartTime)
+	})
+
+	return results, nil
+}
+
 func (h *TemplateHandler) buildDayViewData(date time.Time) (map[string]any, error) {
 	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	dayEnd := dayStart.Add(24 * time.Hour)
 
-	events, err := h.eventStore.ListByDateRange(dayStart, dayEnd)
+	events, err := h.expandEventsForRange(dayStart, dayEnd)
 	if err != nil {
-		return nil, fmt.Errorf("list events: %w", err)
+		return nil, fmt.Errorf("expand events: %w", err)
 	}
 
 	members, err := h.store.List()
@@ -1016,10 +1267,13 @@ func (h *TemplateHandler) buildDayViewData(date time.Time) (map[string]any, erro
 
 		if e.AllDay {
 			allDayEvents = append(allDayEvents, dayViewEvent{
-				ID:          e.ID,
-				Title:       e.Title,
-				Color:       color,
-				MemberEmoji: emoji,
+				ID:             e.ID,
+				Title:          e.Title,
+				Color:          color,
+				MemberEmoji:    emoji,
+				IsRecurring:    e.IsRecurring,
+				ParentID:       e.ParentID,
+				OccurrenceDate: e.OccurrenceDate,
 			})
 			continue
 		}
@@ -1049,13 +1303,16 @@ func (h *TemplateHandler) buildDayViewData(date time.Time) (map[string]any, erro
 		timeRange := e.StartTime.Format("3:04 PM") + " - " + e.EndTime.Format("3:04 PM")
 
 		timedEvents = append(timedEvents, dayViewEvent{
-			ID:          e.ID,
-			Title:       e.Title,
-			Color:       color,
-			MemberEmoji: emoji,
-			TimeRange:   timeRange,
-			TopPx:       topPx,
-			HeightPx:    heightPx,
+			ID:             e.ID,
+			Title:          e.Title,
+			Color:          color,
+			MemberEmoji:    emoji,
+			TimeRange:      timeRange,
+			TopPx:          topPx,
+			HeightPx:       heightPx,
+			IsRecurring:    e.IsRecurring,
+			ParentID:       e.ParentID,
+			OccurrenceDate: e.OccurrenceDate,
 		})
 	}
 
@@ -1080,14 +1337,14 @@ func (h *TemplateHandler) buildDayViewData(date time.Time) (map[string]any, erro
 	isToday := date.Year() == today.Year() && date.YearDay() == today.YearDay()
 
 	return map[string]any{
-		"DateStr":     dayStart.Format("2006-01-02"),
-		"DateLabel":   dayStart.Format("Monday, January 2, 2006"),
-		"PrevDate":    dayStart.AddDate(0, 0, -1).Format("2006-01-02"),
-		"NextDate":    dayStart.AddDate(0, 0, 1).Format("2006-01-02"),
-		"IsToday":     isToday,
+		"DateStr":      dayStart.Format("2006-01-02"),
+		"DateLabel":    dayStart.Format("Monday, January 2, 2006"),
+		"PrevDate":     dayStart.AddDate(0, 0, -1).Format("2006-01-02"),
+		"NextDate":     dayStart.AddDate(0, 0, 1).Format("2006-01-02"),
+		"IsToday":      isToday,
 		"AllDayEvents": allDayEvents,
-		"TimedEvents": timedEvents,
-		"Hours":       hours,
+		"TimedEvents":  timedEvents,
+		"Hours":        hours,
 	}, nil
 }
 
@@ -1101,9 +1358,9 @@ func (h *TemplateHandler) buildWeekViewData(date time.Time) (map[string]any, err
 	monday = time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, time.UTC)
 	sunday := monday.AddDate(0, 0, 7)
 
-	events, err := h.eventStore.ListByDateRange(monday, sunday)
+	events, err := h.expandEventsForRange(monday, sunday)
 	if err != nil {
-		return nil, fmt.Errorf("list events: %w", err)
+		return nil, fmt.Errorf("expand events: %w", err)
 	}
 
 	members, err := h.store.List()
@@ -1136,8 +1393,9 @@ func (h *TemplateHandler) buildWeekViewData(date time.Time) (map[string]any, err
 					}
 				}
 				dayEvents = append(dayEvents, weekDayEvent{
-					Title: e.Title,
-					Color: color,
+					Title:       e.Title,
+					Color:       color,
+					IsRecurring: e.IsRecurring,
 				})
 			}
 		}
@@ -1162,21 +1420,31 @@ func (h *TemplateHandler) buildWeekViewData(date time.Time) (map[string]any, err
 	weekLabel := fmt.Sprintf("%s - %s", monday.Format("Jan 2"), monday.AddDate(0, 0, 6).Format("Jan 2, 2006"))
 
 	return map[string]any{
-		"Days":     days,
+		"Days":      days,
 		"WeekLabel": weekLabel,
-		"PrevWeek": monday.AddDate(0, 0, -7).Format("2006-01-02"),
-		"NextWeek": monday.AddDate(0, 0, 7).Format("2006-01-02"),
-		"TodayStr": today.Format("2006-01-02"),
+		"PrevWeek":  monday.AddDate(0, 0, -7).Format("2006-01-02"),
+		"NextWeek":  monday.AddDate(0, 0, 7).Format("2006-01-02"),
+		"TodayStr":  today.Format("2006-01-02"),
 	}, nil
 }
 
-func (h *TemplateHandler) buildEventDetailData(event *model.CalendarEvent) map[string]any {
+func (h *TemplateHandler) buildEventDetailData(event *model.CalendarEvent, isRecurring bool, parentID int64, occurrenceDate string) map[string]any {
 	data := map[string]any{
-		"ID":          event.ID,
-		"Title":       event.Title,
-		"Description": event.Description,
-		"Location":    event.Location,
-		"AllDay":      event.AllDay,
+		"ID":             event.ID,
+		"Title":          event.Title,
+		"Description":    event.Description,
+		"Location":       event.Location,
+		"AllDay":         event.AllDay,
+		"IsRecurring":    isRecurring,
+		"ParentID":       parentID,
+		"OccurrenceDate": occurrenceDate,
+	}
+
+	if event.RecurrenceRule != "" {
+		rule, err := recurrence.Parse(event.RecurrenceRule)
+		if err == nil {
+			data["RecurrenceDesc"] = rule.Describe()
+		}
 	}
 
 	if event.AllDay {

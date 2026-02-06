@@ -74,6 +74,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /partials/calendar/events", s.templateHandler.CalendarEventCreate)
 	mux.HandleFunc("PUT /partials/calendar/events/{id}", s.templateHandler.CalendarEventUpdate)
 	mux.HandleFunc("DELETE /partials/calendar/events/{id}", s.templateHandler.CalendarEventDeleteForm)
+	mux.HandleFunc("GET /partials/calendar/events/{id}/recurrence-edit", s.templateHandler.RecurrenceEditChoice)
+	mux.HandleFunc("GET /partials/calendar/events/{id}/recurrence-delete", s.templateHandler.RecurrenceDeleteChoice)
 
 	// Weather partial (HTMX polling)
 	mux.HandleFunc("GET /partials/weather", s.templateHandler.WeatherPartial)

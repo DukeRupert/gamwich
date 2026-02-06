@@ -46,6 +46,15 @@ func TestCreateAndGetByID(t *testing.T) {
 	if event.FamilyMemberID != nil {
 		t.Errorf("family_member_id should be nil, got %v", *event.FamilyMemberID)
 	}
+	if event.RecurrenceRule != "" {
+		t.Errorf("recurrence_rule should be empty, got %q", event.RecurrenceRule)
+	}
+	if event.RecurrenceParentID != nil {
+		t.Errorf("recurrence_parent_id should be nil")
+	}
+	if event.Cancelled {
+		t.Error("cancelled should be false")
+	}
 
 	// GetByID
 	got, err := s.GetByID(event.ID)
@@ -138,6 +147,33 @@ func TestListByDateRange(t *testing.T) {
 	}
 	if events[1].Title != "Day 2 Event" {
 		t.Errorf("second event = %q, want %q", events[1].Title, "Day 2 Event")
+	}
+}
+
+func TestListByDateRangeExcludesRecurring(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 5, 9, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 5, 10, 0, 0, 0, time.UTC)
+
+	// Create a normal event
+	s.Create("Normal Event", "", start, end, false, nil, "")
+
+	// Create a recurring event
+	s.CreateWithRecurrence("Weekly Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	// ListByDateRange should only return the normal event
+	rangeStart := time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC)
+	rangeEnd := time.Date(2026, 2, 6, 0, 0, 0, 0, time.UTC)
+	events, err := s.ListByDateRange(rangeStart, rangeEnd)
+	if err != nil {
+		t.Fatalf("list by range: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1 (should exclude recurring)", len(events))
+	}
+	if events[0].Title != "Normal Event" {
+		t.Errorf("event = %q, want %q", events[0].Title, "Normal Event")
 	}
 }
 
@@ -275,5 +311,182 @@ func TestFamilyMemberDeleteSetsNull(t *testing.T) {
 	}
 	if got.FamilyMemberID != nil {
 		t.Errorf("family_member_id should be nil after member deletion, got %v", *got.FamilyMemberID)
+	}
+}
+
+// --- Recurrence-specific tests ---
+
+func TestCreateWithRecurrence(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC) // Tuesday
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	event, err := s.CreateWithRecurrence("Soccer Practice", "", start, end, false, nil, "Field", "FREQ=WEEKLY;BYDAY=TU,TH")
+	if err != nil {
+		t.Fatalf("create recurring event: %v", err)
+	}
+	if event.RecurrenceRule != "FREQ=WEEKLY;BYDAY=TU,TH" {
+		t.Errorf("recurrence_rule = %q, want %q", event.RecurrenceRule, "FREQ=WEEKLY;BYDAY=TU,TH")
+	}
+	if event.RecurrenceParentID != nil {
+		t.Error("parent event should have nil recurrence_parent_id")
+	}
+}
+
+func TestListRecurring(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	// Create a recurring event
+	s.CreateWithRecurrence("Weekly Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	// Create a normal event
+	s.Create("Normal Event", "", start, end, false, nil, "")
+
+	// ListRecurring should only return the recurring one
+	events, err := s.ListRecurring(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("list recurring: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Title != "Weekly Meeting" {
+		t.Errorf("event = %q, want %q", events[0].Title, "Weekly Meeting")
+	}
+}
+
+func TestListRecurringBeforeFilter(t *testing.T) {
+	s := setupTestDB(t)
+
+	// Create a recurring event starting Feb 10
+	start := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 10, 11, 0, 0, 0, time.UTC)
+	s.CreateWithRecurrence("Future Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	// ListRecurring with before=Feb 5 should return nothing
+	events, err := s.ListRecurring(time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("list recurring: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("got %d events, want 0 (event starts after query date)", len(events))
+	}
+}
+
+func TestCreateAndListExceptions(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC) // Tuesday
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	parent, err := s.CreateWithRecurrence("Weekly Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY")
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+
+	// Create a modified exception for Feb 10
+	origStart := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	newStart := time.Date(2026, 2, 10, 14, 0, 0, 0, time.UTC)
+	newEnd := time.Date(2026, 2, 10, 15, 0, 0, 0, time.UTC)
+
+	exc, err := s.CreateException(parent.ID, origStart, "Weekly Meeting (moved)", "", newStart, newEnd, false, nil, "", false)
+	if err != nil {
+		t.Fatalf("create exception: %v", err)
+	}
+	if exc.RecurrenceParentID == nil || *exc.RecurrenceParentID != parent.ID {
+		t.Error("exception should reference parent")
+	}
+	if exc.OriginalStartTime == nil {
+		t.Fatal("original_start_time should be set")
+	}
+	if !exc.OriginalStartTime.Equal(origStart) {
+		t.Errorf("original_start_time = %v, want %v", exc.OriginalStartTime, origStart)
+	}
+	if exc.Cancelled {
+		t.Error("exception should not be cancelled")
+	}
+
+	// Create a cancelled exception for Feb 17
+	origStart2 := time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC)
+	_, err = s.CreateException(parent.ID, origStart2, "Weekly Meeting", "", origStart2, origStart2.Add(time.Hour), false, nil, "", true)
+	if err != nil {
+		t.Fatalf("create cancelled exception: %v", err)
+	}
+
+	// List exceptions
+	exceptions, err := s.ListExceptions(parent.ID)
+	if err != nil {
+		t.Fatalf("list exceptions: %v", err)
+	}
+	if len(exceptions) != 2 {
+		t.Fatalf("got %d exceptions, want 2", len(exceptions))
+	}
+	if !exceptions[1].Cancelled {
+		t.Error("second exception should be cancelled")
+	}
+}
+
+func TestDeleteExceptions(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	parent, _ := s.CreateWithRecurrence("Weekly", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	origStart := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	s.CreateException(parent.ID, origStart, "Modified", "", origStart, origStart.Add(time.Hour), false, nil, "", false)
+
+	err := s.DeleteExceptions(parent.ID)
+	if err != nil {
+		t.Fatalf("delete exceptions: %v", err)
+	}
+
+	exceptions, _ := s.ListExceptions(parent.ID)
+	if len(exceptions) != 0 {
+		t.Errorf("got %d exceptions after delete, want 0", len(exceptions))
+	}
+}
+
+func TestDeleteParentCascadesExceptions(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	parent, _ := s.CreateWithRecurrence("Weekly", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	origStart := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	exc, _ := s.CreateException(parent.ID, origStart, "Modified", "", origStart, origStart.Add(time.Hour), false, nil, "", false)
+
+	// Delete parent — exceptions should cascade
+	if err := s.Delete(parent.ID); err != nil {
+		t.Fatalf("delete parent: %v", err)
+	}
+
+	got, _ := s.GetByID(exc.ID)
+	if got != nil {
+		t.Error("exception should be deleted via CASCADE")
+	}
+}
+
+func TestUpdateWithRecurrence(t *testing.T) {
+	s := setupTestDB(t)
+
+	start := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 3, 11, 0, 0, 0, time.UTC)
+
+	event, _ := s.CreateWithRecurrence("Weekly Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY")
+
+	updated, err := s.UpdateWithRecurrence(event.ID, "Biweekly Meeting", "", start, end, false, nil, "", "FREQ=WEEKLY;INTERVAL=2")
+	if err != nil {
+		t.Fatalf("update with recurrence: %v", err)
+	}
+	if updated.RecurrenceRule != "FREQ=WEEKLY;INTERVAL=2" {
+		t.Errorf("recurrence_rule = %q, want %q", updated.RecurrenceRule, "FREQ=WEEKLY;INTERVAL=2")
 	}
 }

@@ -68,10 +68,11 @@
         {{range .AllDayEvents}}
         <div class="rounded-lg px-3 py-2 text-sm font-medium text-white cursor-pointer"
              style="background-color: {{.Color}}"
-             hx-get="/partials/calendar/events/{{.ID}}"
+             hx-get="/partials/calendar/events/{{.ID}}?recurring={{if .IsRecurring}}1{{else}}0{{end}}&parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
              hx-target="#event-modal-body"
              hx-swap="innerHTML"
              onclick="document.getElementById('event-modal').showModal()">
+            {{if .IsRecurring}}<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 inline-block mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{{end}}
             {{.Title}}
             {{if .MemberEmoji}}<span class="ml-1">{{.MemberEmoji}}</span>{{end}}
         </div>
@@ -100,11 +101,14 @@
             {{range .TimedEvents}}
             <div class="absolute rounded-lg px-2 py-1 text-sm text-white overflow-hidden cursor-pointer hover:brightness-110 transition-all"
                  style="top: {{.TopPx}}px; height: {{.HeightPx}}px; left: 68px; right: 8px; background-color: {{.Color}}; min-height: 24px;"
-                 hx-get="/partials/calendar/events/{{.ID}}"
+                 hx-get="/partials/calendar/events/{{.ID}}?recurring={{if .IsRecurring}}1{{else}}0{{end}}&parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
                  hx-target="#event-modal-body"
                  hx-swap="innerHTML"
                  onclick="document.getElementById('event-modal').showModal()">
-                <div class="font-medium truncate">{{.Title}}</div>
+                <div class="font-medium truncate">
+                    {{if .IsRecurring}}<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 inline-block mr-0.5 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{{end}}
+                    {{.Title}}
+                </div>
                 {{if ge .HeightPx 40}}
                 <div class="text-xs opacity-80">{{.TimeRange}}</div>
                 {{end}}
@@ -162,6 +166,7 @@
                     {{range .Events}}
                     <div class="rounded px-1.5 py-0.5 text-xs text-white truncate"
                          style="background-color: {{.Color}}">
+                        {{if .IsRecurring}}<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline-block -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{{end}}
                         {{.Title}}
                     </div>
                     {{end}}
@@ -284,6 +289,19 @@
             </div>
         </div>
 
+        <!-- Recurrence Selector -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Repeat</span></label>
+            <select x-model="recurrence" class="select select-bordered w-full">
+                <option value="">Does not repeat</option>
+                <option value="FREQ=DAILY">Daily</option>
+                <option value="FREQ=WEEKLY">Weekly</option>
+                <option value="FREQ=WEEKLY;INTERVAL=2">Biweekly</option>
+                <option value="FREQ=MONTHLY">Monthly</option>
+                <option value="FREQ=YEARLY">Yearly</option>
+            </select>
+        </div>
+
         <!-- Family Member Selector -->
         {{if .Members}}
         <div class="form-control mb-3">
@@ -336,6 +354,7 @@
         <input type="hidden" name="end_minute" :value="endMinute">
         <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
         <input type="hidden" name="family_member_id" :value="selectedMember || ''">
+        <input type="hidden" name="recurrence_rule" :value="recurrence">
 
         <!-- Actions -->
         <div class="flex justify-end gap-2">
@@ -364,6 +383,7 @@ function eventForm() {
         selectedMember: 0,
         location: '',
         description: '',
+        recurrence: '',
 
         get startHour12() {
             let h = this.startHour % 12;
@@ -525,6 +545,21 @@ function eventForm() {
             </div>
         </div>
 
+        <!-- Recurrence Selector (only for non-recurring edits or "all" mode) -->
+        {{if not .IsRecurring}}
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Repeat</span></label>
+            <select x-model="recurrence" class="select select-bordered w-full">
+                <option value="">Does not repeat</option>
+                <option value="FREQ=DAILY">Daily</option>
+                <option value="FREQ=WEEKLY">Weekly</option>
+                <option value="FREQ=WEEKLY;INTERVAL=2">Biweekly</option>
+                <option value="FREQ=MONTHLY">Monthly</option>
+                <option value="FREQ=YEARLY">Yearly</option>
+            </select>
+        </div>
+        {{end}}
+
         <!-- Family Member Selector -->
         {{if .Members}}
         <div class="form-control mb-3">
@@ -577,6 +612,10 @@ function eventForm() {
         <input type="hidden" name="end_minute" :value="endMinute">
         <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
         <input type="hidden" name="family_member_id" :value="selectedMember || ''">
+        <input type="hidden" name="recurrence_rule" :value="recurrence">
+        {{if .Mode}}<input type="hidden" name="mode" value="{{.Mode}}">{{end}}
+        {{if .ParentID}}<input type="hidden" name="parent_id" value="{{.ParentID}}">{{end}}
+        {{if .OccurrenceDate}}<input type="hidden" name="occurrence_date" value="{{.OccurrenceDate}}">{{end}}
 
         <!-- Actions -->
         <div class="flex justify-end gap-2">
@@ -605,6 +644,7 @@ function eventEditForm() {
         selectedMember: {{if .FamilyMemberID}}{{.FamilyMemberID}}{{else}}0{{end}},
         location: '{{.Location}}',
         description: '{{.Description}}',
+        recurrence: '{{.RecurrenceRule}}',
 
         get startHour12() {
             let h = this.startHour % 12;
@@ -673,7 +713,10 @@ function eventEditForm() {
 
 {{define "calendar-event-detail"}}
 <div>
-    <h3 class="text-xl font-bold mb-4">{{.Title}}</h3>
+    <h3 class="text-xl font-bold mb-4">
+        {{if .IsRecurring}}<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-1 -mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{{end}}
+        {{.Title}}
+    </h3>
 
     <div class="space-y-3">
         <!-- Time -->
@@ -691,6 +734,16 @@ function eventEditForm() {
                 {{end}}
             </div>
         </div>
+
+        <!-- Recurrence Description -->
+        {{if .RecurrenceDesc}}
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <div class="font-medium">{{.RecurrenceDesc}}</div>
+        </div>
+        {{end}}
 
         <!-- Location -->
         {{if .Location}}
@@ -722,6 +775,16 @@ function eventEditForm() {
 
     <!-- Actions -->
     <div class="flex justify-end gap-2 mt-6">
+        {{if .IsRecurring}}
+        <button class="btn btn-error btn-outline"
+                hx-get="/partials/calendar/events/{{.ID}}/recurrence-delete?parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML">Delete</button>
+        <button class="btn btn-primary"
+                hx-get="/partials/calendar/events/{{.ID}}/recurrence-edit?parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML">Edit</button>
+        {{else}}
         <button class="btn btn-error btn-outline"
                 hx-delete="/partials/calendar/events/{{.ID}}"
                 hx-target="#calendar-view-content"
@@ -731,6 +794,61 @@ function eventEditForm() {
                 hx-get="/partials/calendar/events/{{.ID}}/edit"
                 hx-target="#event-modal-body"
                 hx-swap="innerHTML">Edit</button>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "recurrence-edit-choice"}}
+<div>
+    <h3 class="text-xl font-bold mb-4">Edit recurring event</h3>
+    <p class="text-base-content/60 mb-6">How would you like to edit this event?</p>
+
+    <div class="space-y-3">
+        <button class="btn btn-block btn-outline"
+                hx-get="/partials/calendar/events/{{.ID}}/edit?mode=single&parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML">
+            This event only
+        </button>
+        <button class="btn btn-block btn-outline"
+                hx-get="/partials/calendar/events/{{.ParentID}}/edit?mode=all&parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML">
+            All events in the series
+        </button>
+    </div>
+
+    <div class="flex justify-end mt-6">
+        <button class="btn btn-ghost"
+                onclick="document.getElementById('event-modal').close()">Cancel</button>
+    </div>
+</div>
+{{end}}
+
+{{define "recurrence-delete-choice"}}
+<div>
+    <h3 class="text-xl font-bold mb-4">Delete recurring event</h3>
+    <p class="text-base-content/60 mb-6">How would you like to delete this event?</p>
+
+    <div class="space-y-3">
+        <button class="btn btn-block btn-error btn-outline"
+                hx-delete="/partials/calendar/events/{{.ID}}?mode=single&parent_id={{.ParentID}}&occurrence_date={{.OccurrenceDate}}"
+                hx-target="#calendar-view-content"
+                onclick="document.getElementById('event-modal').close()">
+            This event only
+        </button>
+        <button class="btn btn-block btn-error btn-outline"
+                hx-delete="/partials/calendar/events/{{.ParentID}}?mode=all&parent_id={{.ParentID}}"
+                hx-target="#calendar-view-content"
+                onclick="document.getElementById('event-modal').close()">
+            All events in the series
+        </button>
+    </div>
+
+    <div class="flex justify-end mt-6">
+        <button class="btn btn-ghost"
+                onclick="document.getElementById('event-modal').close()">Cancel</button>
     </div>
 </div>
 {{end}}

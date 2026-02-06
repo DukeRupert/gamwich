@@ -17,6 +17,10 @@ func NewEventStore(db *sql.DB) *EventStore {
 }
 
 func (s *EventStore) Create(title, description string, startTime, endTime time.Time, allDay bool, familyMemberID *int64, location string) (*model.CalendarEvent, error) {
+	return s.CreateWithRecurrence(title, description, startTime, endTime, allDay, familyMemberID, location, "")
+}
+
+func (s *EventStore) CreateWithRecurrence(title, description string, startTime, endTime time.Time, allDay bool, familyMemberID *int64, location, recurrenceRule string) (*model.CalendarEvent, error) {
 	var allDayInt int
 	if allDay {
 		allDayInt = 1
@@ -28,9 +32,9 @@ func (s *EventStore) Create(title, description string, startTime, endTime time.T
 	}
 
 	result, err := s.db.Exec(
-		`INSERT INTO calendar_events (title, description, start_time, end_time, all_day, family_member_id, location)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		title, description, startTime.UTC(), endTime.UTC(), allDayInt, memberID, location,
+		`INSERT INTO calendar_events (title, description, start_time, end_time, all_day, family_member_id, location, recurrence_rule)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		title, description, startTime.UTC(), endTime.UTC(), allDayInt, memberID, location, recurrenceRule,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert calendar event: %w", err)
@@ -44,36 +48,92 @@ func (s *EventStore) Create(title, description string, startTime, endTime time.T
 	return s.GetByID(id)
 }
 
-func (s *EventStore) GetByID(id int64) (*model.CalendarEvent, error) {
-	var e model.CalendarEvent
-	var allDayInt int
-	var memberID sql.NullInt64
+func (s *EventStore) CreateException(parentID int64, originalStart time.Time, title, description string, startTime, endTime time.Time, allDay bool, familyMemberID *int64, location string, cancelled bool) (*model.CalendarEvent, error) {
+	var allDayInt, cancelledInt int
+	if allDay {
+		allDayInt = 1
+	}
+	if cancelled {
+		cancelledInt = 1
+	}
 
-	err := s.db.QueryRow(
-		`SELECT id, title, description, start_time, end_time, all_day, family_member_id, location, created_at, updated_at
-		 FROM calendar_events WHERE id = ?`,
-		id,
-	).Scan(&e.ID, &e.Title, &e.Description, &e.StartTime, &e.EndTime, &allDayInt, &memberID, &e.Location, &e.CreatedAt, &e.UpdatedAt)
+	var memberID sql.NullInt64
+	if familyMemberID != nil {
+		memberID = sql.NullInt64{Int64: *familyMemberID, Valid: true}
+	}
+
+	result, err := s.db.Exec(
+		`INSERT INTO calendar_events (title, description, start_time, end_time, all_day, family_member_id, location, recurrence_parent_id, original_start_time, cancelled)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		title, description, startTime.UTC(), endTime.UTC(), allDayInt, memberID, location, parentID, originalStart.UTC(), cancelledInt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("insert exception event: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("last insert id: %w", err)
+	}
+
+	return s.GetByID(id)
+}
+
+func scanEvent(scanner interface{ Scan(...any) error }) (*model.CalendarEvent, error) {
+	var e model.CalendarEvent
+	var allDayInt, cancelledInt int
+	var memberID sql.NullInt64
+	var parentID sql.NullInt64
+	var originalStart sql.NullTime
+
+	err := scanner.Scan(
+		&e.ID, &e.Title, &e.Description, &e.StartTime, &e.EndTime,
+		&allDayInt, &memberID, &e.Location, &e.RecurrenceRule,
+		&parentID, &originalStart, &cancelledInt,
+		&e.CreatedAt, &e.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	e.AllDay = allDayInt != 0
+	e.Cancelled = cancelledInt != 0
+	if memberID.Valid {
+		e.FamilyMemberID = &memberID.Int64
+	}
+	if parentID.Valid {
+		e.RecurrenceParentID = &parentID.Int64
+	}
+	if originalStart.Valid {
+		e.OriginalStartTime = &originalStart.Time
+	}
+
+	return &e, nil
+}
+
+const selectCols = `id, title, description, start_time, end_time, all_day, family_member_id, location, recurrence_rule, recurrence_parent_id, original_start_time, cancelled, created_at, updated_at`
+
+func (s *EventStore) GetByID(id int64) (*model.CalendarEvent, error) {
+	row := s.db.QueryRow(
+		`SELECT `+selectCols+` FROM calendar_events WHERE id = ?`, id,
+	)
+	e, err := scanEvent(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query calendar event: %w", err)
 	}
-
-	e.AllDay = allDayInt != 0
-	if memberID.Valid {
-		e.FamilyMemberID = &memberID.Int64
-	}
-
-	return &e, nil
+	return e, nil
 }
 
 func (s *EventStore) ListByDateRange(start, end time.Time) ([]model.CalendarEvent, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, description, start_time, end_time, all_day, family_member_id, location, created_at, updated_at
+		`SELECT `+selectCols+`
 		 FROM calendar_events
 		 WHERE start_time < ? AND end_time > ?
+		   AND recurrence_rule = ''
+		   AND recurrence_parent_id IS NULL
 		 ORDER BY all_day DESC, start_time ASC`,
 		end.UTC(), start.UTC(),
 	)
@@ -84,24 +144,81 @@ func (s *EventStore) ListByDateRange(start, end time.Time) ([]model.CalendarEven
 
 	var events []model.CalendarEvent
 	for rows.Next() {
-		var e model.CalendarEvent
-		var allDayInt int
-		var memberID sql.NullInt64
-
-		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &e.StartTime, &e.EndTime, &allDayInt, &memberID, &e.Location, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		e, err := scanEvent(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan calendar event: %w", err)
 		}
-
-		e.AllDay = allDayInt != 0
-		if memberID.Valid {
-			e.FamilyMemberID = &memberID.Int64
-		}
-		events = append(events, e)
+		events = append(events, *e)
 	}
 	return events, rows.Err()
 }
 
+// ListRecurring returns all recurring parent events whose start_time is before the given date.
+func (s *EventStore) ListRecurring(before time.Time) ([]model.CalendarEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT `+selectCols+`
+		 FROM calendar_events
+		 WHERE recurrence_rule != ''
+		   AND recurrence_parent_id IS NULL
+		   AND start_time < ?
+		 ORDER BY start_time ASC`,
+		before.UTC(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query recurring events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []model.CalendarEvent
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan recurring event: %w", err)
+		}
+		events = append(events, *e)
+	}
+	return events, rows.Err()
+}
+
+// ListExceptions returns all exception events for a given parent recurring event.
+func (s *EventStore) ListExceptions(parentID int64) ([]model.CalendarEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT `+selectCols+`
+		 FROM calendar_events
+		 WHERE recurrence_parent_id = ?
+		 ORDER BY original_start_time ASC`,
+		parentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query exceptions: %w", err)
+	}
+	defer rows.Close()
+
+	var events []model.CalendarEvent
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan exception: %w", err)
+		}
+		events = append(events, *e)
+	}
+	return events, rows.Err()
+}
+
+// DeleteExceptions removes all exception events for a given parent.
+func (s *EventStore) DeleteExceptions(parentID int64) error {
+	_, err := s.db.Exec("DELETE FROM calendar_events WHERE recurrence_parent_id = ?", parentID)
+	if err != nil {
+		return fmt.Errorf("delete exceptions: %w", err)
+	}
+	return nil
+}
+
 func (s *EventStore) Update(id int64, title, description string, startTime, endTime time.Time, allDay bool, familyMemberID *int64, location string) (*model.CalendarEvent, error) {
+	return s.UpdateWithRecurrence(id, title, description, startTime, endTime, allDay, familyMemberID, location, "")
+}
+
+func (s *EventStore) UpdateWithRecurrence(id int64, title, description string, startTime, endTime time.Time, allDay bool, familyMemberID *int64, location, recurrenceRule string) (*model.CalendarEvent, error) {
 	var allDayInt int
 	if allDay {
 		allDayInt = 1
@@ -114,9 +231,9 @@ func (s *EventStore) Update(id int64, title, description string, startTime, endT
 
 	_, err := s.db.Exec(
 		`UPDATE calendar_events
-		 SET title = ?, description = ?, start_time = ?, end_time = ?, all_day = ?, family_member_id = ?, location = ?
+		 SET title = ?, description = ?, start_time = ?, end_time = ?, all_day = ?, family_member_id = ?, location = ?, recurrence_rule = ?
 		 WHERE id = ?`,
-		title, description, startTime.UTC(), endTime.UTC(), allDayInt, memberID, location, id,
+		title, description, startTime.UTC(), endTime.UTC(), allDayInt, memberID, location, recurrenceRule, id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update calendar event: %w", err)
