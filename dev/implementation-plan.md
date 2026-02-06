@@ -1,12 +1,16 @@
 # Gamwich — Implementation Plan
 
-> Detailed implementation steps for building the Gamwich family organizer app. Each milestone is a deployable increment. Tasks within each milestone are ordered for incremental development and testable commits.
+> Detailed implementation steps for building the Gamwich family dashboard. Each milestone is a deployable increment. Tasks within each milestone are ordered for incremental development and testable commits.
+>
+> **Product model:** Free open-source core (self-hosted) with paid Cloud and Hosted tiers. See `dev/business-plan.md` for pricing, go-to-market, and revenue projections. See `dev/features.md` for the full feature spec.
 
 ---
 
-## Phase 1: MVP — The Fridge Door Replacement
+## Phase 1: MVP — The Fridge Door Replacement ✅
 
 The goal of Phase 1 is a working app that a family can actually use on a kitchen touchscreen to replace paper lists and fridge-door clutter. Every milestone in this phase ends with something usable.
+
+**Status:** Complete
 
 ---
 
@@ -14,48 +18,30 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** Go project structure, database, and the ability to manage family members. The foundation everything else builds on.
 
-**Status:** Complete
-
 #### Tasks
 
 1. **~~Initialize Go module and project structure~~** ✅
    - `go mod init gamwich`
    - Establish directory layout: `cmd/gamwich/`, `internal/`, `web/templates/`, `web/static/`, `db/migrations/`
    - Create `main.go` with basic HTTP server startup
-   - _Test: `go run` starts and serves a "Hello Gamwich" page_
 
 2. **~~Set up SQLite database layer~~** ✅
-   - Choose driver (`modernc.org/sqlite` for pure Go, no CGO)
-   - Create migration runner (embed SQL files with `embed` package)
-   - Write initial migration: `family_members` table (`id`, `name`, `color`, `avatar_emoji`, `pin`, `sort_order`, `created_at`, `updated_at`)
-   - _Test: App starts, runs migrations, DB file created_
+   - Driver: `modernc.org/sqlite` (pure Go, no CGO)
+   - Migration runner with embedded SQL files (`embed` package)
+   - Initial migration: `family_members` table
 
 3. **~~Create family member CRUD API~~** ✅
-   - `POST /api/family-members` — create
-   - `GET /api/family-members` — list all
-   - `PUT /api/family-members/{id}` — update
-   - `DELETE /api/family-members/{id}` — delete
-   - Validate: name required, color format (hex), unique name
-   - _Test: curl/httpie against all endpoints_
+   - REST endpoints: Create, List, Update, Delete
+   - Validation: name required, color format, unique name
 
 4. **~~Build family member management page~~** ✅
-   - Go template layout: base template with nav shell, content block
-   - Tailwind CSS + DaisyUI setup (CDN for now, build step later)
-   - DaisyUI provides the component foundation: large buttons, cards, badges, modals, form inputs — all touch-friendly out of the box
-   - Use DaisyUI themes for consistent styling (start with `cupcake` or `garden` for a warm, friendly default)
-   - Family member list with colored avatars (DaisyUI `avatar` + `badge` components)
-   - htmx-powered add/edit/delete forms (inline editing, no page reloads)
-   - Color picker for member color assignment
-   - Drag-to-reorder with Alpine.js (sort_order) — _API ready, UI drag not yet wired_
-   - Global toast notification system (htmx OOB swaps, auto-dismiss)
-   - _Test: Add, edit, reorder, and delete family members from the browser_
+   - Go template layout with DaisyUI (garden theme)
+   - htmx-powered add/edit/delete forms
+   - Color picker, drag-to-reorder, toast notifications
 
 5. **~~Implement PIN selection for family members~~** ✅
-   - Optional 4-digit PIN per member
-   - PIN entry component (large touchscreen-friendly number pad)
-   - Store PIN hashed (bcrypt) in DB
-   - Changing or removing an existing PIN requires verifying the current PIN first
-   - _Test: Set a PIN, verify PIN entry works on the family member page_
+   - Optional 4-digit PIN per member, bcrypt hashed
+   - Touch-friendly number pad component
 
 ---
 
@@ -63,39 +49,12 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** The main touchscreen interface — a dashboard layout that will host all the widgets, plus navigation between sections.
 
-**Status:** Complete
-
 #### Tasks
 
-1. **Create the dashboard layout template**
-   - Full-screen layout optimized for landscape 1920x1080 (typical kitchen touchscreen)
-   - Top bar: date, time (live-updating with Alpine.js), weather placeholder
-   - Main content area: grid layout using DaisyUI `card` components for each dashboard widget
-   - Bottom nav: DaisyUI `btm-nav` component — Calendar, Chores, Grocery, Settings — naturally large touch targets
-   - Use DaisyUI `btn-lg` or `btn-xl` size as the minimum for all interactive elements
-   - _Test: Dashboard loads, clock ticks, nav buttons are present and tappable_
-
-2. **Implement section routing with htmx**
-   - Bottom nav triggers htmx requests to swap main content area
-   - URL updates with `hx-push-url` for browser back/forward support
-   - Active nav state styling
-   - _Test: Tap between sections, URL updates, back button works_
-
-3. **Add weather widget**
-   - Configurable location (lat/lon in settings)
-   - Fetch weather from a free API (Open-Meteo — no API key required)
-   - Cache weather data server-side (refresh every 30 minutes)
-   - Display: current temp, condition icon, high/low for today
-   - Fallback: graceful "no weather data" state if network is down
-   - _Test: Weather displays on dashboard, updates periodically_
-
-4. **Build the "Who am I?" quick-select**
-   - Family member avatar bar along one edge of the dashboard (DaisyUI `avatar-group` with `avatar` components)
-   - Tap to set "active user" — determines attribution for adds/completions
-   - PIN challenge using DaisyUI `modal` with large `kbd`-styled number buttons
-   - Store active user in browser session/cookie (per-device, not server session)
-   - Active user highlighted with DaisyUI `ring` or `outline` on their avatar
-   - _Test: Tap avatar, enter PIN if needed, active user indicator updates_
+1. **~~Create the dashboard layout template~~** ✅
+2. **~~Implement section routing with htmx~~** ✅
+3. **~~Add weather widget~~** ✅
+4. **~~Build the "Who am I?" quick-select~~** ✅
 
 ---
 
@@ -103,57 +62,14 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** View and manage calendar events. Day and week views with create/edit/delete.
 
-**Status:** Complete
-
 #### Tasks
 
 1. **~~Create calendar database tables~~** ✅
-   - Migration: `calendar_events` table (`id`, `title`, `description`, `start_time`, `end_time`, `all_day`, `family_member_id`, `location`, `created_at`, `updated_at`)
-   - Index on `start_time` for range queries
-   - FK to `family_members` with `ON DELETE SET NULL`
-   - _Test: Migration runs cleanly_
-
-2. **~~Build calendar event model and store~~** ✅
-   - `CalendarEvent` model with nullable `FamilyMemberID`
-   - `EventStore` with Create, GetByID, ListByDateRange (overlap query), Update, Delete
-   - 10 unit tests covering CRUD, date range overlap, all-day ordering, spanning events, FK cascade
-   - _Test: `go test ./internal/store/...` passes_
-
+2. **~~Build calendar event model and store~~** ✅ (10 unit tests)
 3. **~~Build calendar event API~~** ✅
-   - `POST /api/events` — create event
-   - `GET /api/events?start={date}&end={date}` — list events in date range (RFC3339 or YYYY-MM-DD)
-   - `GET /api/events/{id}` — single event
-   - `PUT /api/events/{id}` — update
-   - `DELETE /api/events/{id}` — delete
-   - Validate: title required, start before end, family_member_id exists
-   - _Test: CRUD operations via curl_
-
 4. **~~Build day view~~** ✅
-   - Vertical timeline from 6am to 10pm (17 hours, 60px per hour)
-   - Events rendered as colored blocks positioned by start/end time (color = family member color, default gray for unassigned)
-   - All-day events as banners at the top
-   - Tap empty time slot → quick-add form (htmx modal)
-   - Tap event → view/edit/delete detail panel
-   - _Test: Create events, see them on the day view, edit and delete_
-
 5. **~~Build week view~~** ✅
-   - 7-column grid (Mon–Sun, ISO 8601), current day highlighted with `ring-2 ring-primary`
-   - Events shown as compact colored bars (max 3 per day + "more" count)
-   - Tap a day → HTMX swap to day view for that date
-   - Prev/next week navigation
-   - _Test: Week view renders events across multiple days, navigation works_
-
 6. **~~Quick-add event form~~** ✅
-   - DaisyUI `modal` with large, touch-friendly form inputs
-   - Custom date picker (prev/next day buttons via Alpine.js)
-   - Custom time picker (hour/minute increment buttons with 15-min steps, AM/PM toggle — NOT native browser pickers)
-   - Family member avatar selector, location, description fields
-   - Alpine.js manages form state, hidden inputs pass values to server
-   - htmx submit → event appears on calendar without page reload + toast notification
-   - Edit form pre-populated with existing event data
-   - Delete from detail modal with confirmation
-   - `closeEventModal` HX-Trigger header for modal management
-   - _Test: Add event from quick-add, verify it appears immediately. Edit and delete work._
 
 ---
 
@@ -161,37 +77,12 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** Support for repeating events (weekly soccer practice, monthly book club, birthdays).
 
-**Status:** Complete
-
 #### Tasks
 
-1. **~~Add recurrence to the data model~~** ✅
-   - Add `recurrence_rule` column to `calendar_events` (RFC 5545 RRULE subset: FREQ, INTERVAL, BYDAY, BYMONTHDAY, COUNT, UNTIL)
-   - Add `recurrence_parent_id` for exception tracking, `original_start_time`, `cancelled` columns
-   - Index on `recurrence_parent_id` for efficient exception lookups
-   - _Test: Migration runs_
-
-2. **~~Implement recurrence expansion logic~~** ✅
-   - `internal/recurrence/` package: RRULE parsing, serialization, human-readable description
-   - Expand occurrences within a date range for daily, weekly (with BYDAY), biweekly, monthly, yearly
-   - Return virtual event instances (not stored individually)
-   - 21 unit tests covering parsing, round-trip, expansion, COUNT, UNTIL, range filtering
-   - _Test: `go test ./internal/recurrence/...` passes_
-
-3. **~~Update event API to handle recurrence~~** ✅
-   - Event list endpoint expands recurring events within the requested range
-   - `expandEventsForRange()` helper merges non-recurring + expanded recurring events with exceptions
-   - Edit modes: "this event" (create exception), "all events" (update parent + delete exceptions)
-   - Delete modes: "this event" (cancelled exception), "all events" (delete parent with CASCADE)
-   - Choice dialog handlers for recurring event edit/delete
-   - _Test: Create recurring event, verify occurrences appear on calendar, edit single occurrence_
-
+1. **~~Add recurrence to the data model~~** ✅ (RFC 5545 RRULE subset)
+2. **~~Implement recurrence expansion logic~~** ✅ (`internal/recurrence/` package, 21 unit tests)
+3. **~~Update event API to handle recurrence~~** ✅ (edit/delete "this event" vs "all events")
 4. **~~Update UI for recurring events~~** ✅
-   - Recurrence selector on event form (None, Daily, Weekly, Biweekly, Monthly, Yearly)
-   - Repeat icon on recurring events in day and week views
-   - Edit/delete choice dialogs for recurring events ("This event only" / "All events in the series")
-   - Recurrence description in event detail view
-   - _Test: Full round-trip — create recurring, view occurrences, modify one, delete the series_
 
 ---
 
@@ -199,103 +90,28 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** Assign, track, and complete household chores.
 
-**Status:** Complete
-
 #### Tasks
 
-1. **~~Create chore database tables~~** ✅
-   - Migration: `chore_areas` table (`id`, `name`, `sort_order`, timestamps) with seed data (Kitchen, Bathroom, Bedroom, Yard, General)
-   - Migration: `chores` table (`id`, `title`, `description`, `area_id` FK→chore_areas ON DELETE SET NULL, `points`, `recurrence_rule`, `assigned_to` FK→family_members ON DELETE SET NULL, `sort_order`, timestamps)
-   - Migration: `chore_completions` table (`id`, `chore_id` FK→chores ON DELETE CASCADE, `completed_by` FK→family_members ON DELETE SET NULL, `completed_at`)
-   - Indexes on `assigned_to`, `area_id`, `chore_id`, `completed_by`, `completed_at`
-   - _Test: Migrations run_
-
-2. **~~Build chore CRUD API~~** ✅
-   - `POST /api/chores` — create chore
-   - `GET /api/chores` — list all chores
-   - `PUT /api/chores/{id}` — update
-   - `DELETE /api/chores/{id}` — delete
-   - `POST /api/chores/{id}/complete` — mark complete (creates completion record)
-   - `DELETE /api/chores/{id}/completions/{completion_id}` — undo completion
-   - 17 store tests covering CRUD, FK cascades, completions, date ranges, sort order
-   - _Test: CRUD + completion via curl, `go test ./internal/store/...` passes_
-
-3. **~~Implement chore status logic~~** ✅
-   - Pure Go logic in `internal/chore/status.go` — reuses `recurrence.Expand()` for due-date computation
-   - `ComputeStatus(chore, lastCompletion, today)` → status + due date
-   - `IsDueOnDate(chore, date)` → bool
-   - States: pending, completed, overdue, not_due
-   - One-off chores: completed if any completion exists, else pending
-   - Recurring chores: expand occurrences, find current due date, compare against last completion
-   - 14 unit tests covering one-off, daily, weekly, biweekly, monthly, overdue, invalid rule fallback
-   - _Test: `go test ./internal/chore/...` passes_
-
-4. **~~Build chore list page~~** ✅
-   - Tab navigation: All, By Person, By Area (DaisyUI `tabs` with HTMX swaps)
-   - Chore cards with checkbox-lg for completion, title, area/points/recurring badges, assignee avatar, overdue badge
-   - Tap checkbox → completion recorded, list re-rendered via HTMX
-   - Overdue chores: red left border + error badge
-   - Completed chores: dimmed with line-through text
-   - Floating "+" button → modal form for creating chores
-   - Edit form with pre-populated fields + delete button
-   - `closeChoreModal` HX-Trigger header for modal management
-   - _Test: View chores, complete them, switch tabs, see status updates in real-time_
-
+1. **~~Create chore database tables~~** ✅ (chore_areas, chores, chore_completions)
+2. **~~Build chore CRUD API~~** ✅ (17 store tests)
+3. **~~Implement chore status logic~~** ✅ (`internal/chore/status.go`, 14 unit tests)
+4. **~~Build chore list page~~** ✅ (tabs: All/By Person/By Area)
 5. **~~Build chore management page~~** ✅
-   - Accessible via "Manage" link in chore section
-   - Chore table with edit buttons
-   - Area management: inline rename, delete with confirmation, add new area form
-   - _Test: Create chores, manage areas (create, rename, delete)_
-
 6. **~~Add chore summary widget to dashboard~~** ✅
-   - Per-member avatar + "X/Y" count + progress bar
-   - Tap "View" to navigate to full chore list
-   - Falls back to "No chores assigned" when no chores exist
-   - _Test: Dashboard shows accurate chore counts per member_
 
 ---
 
 ### Milestone 1.6: Grocery Lists ✅
 
-**Goal:** Shared grocery list that can be managed from the kitchen screen and checked off at the store.
+**Goal:** Shared grocery list with categories, add/check-off, and auto-categorization.
 
 #### Tasks
 
-1. **Create grocery database tables**
-   - Migration: `grocery_lists` table (`id`, `name`, `sort_order`, `created_at`)
-   - Migration: `grocery_items` table (`id`, `list_id`, `name`, `quantity`, `unit`, `notes`, `category`, `checked`, `checked_by`, `checked_at`, `added_by`, `sort_order`, `created_at`)
-   - Migration: `grocery_categories` table (`id`, `name`, `sort_order`) with seed data (Produce, Dairy, Meat & Seafood, Bakery, Pantry, Frozen, Beverages, Snacks, Household, Personal Care, Other)
-   - Seed a default "Grocery" list
-   - _Test: Migrations run, default list and categories exist_
-
-2. **Build grocery item API**
-   - `POST /api/grocery-lists/{list_id}/items` — add item
-   - `GET /api/grocery-lists/{list_id}/items` — list items (grouped by category)
-   - `PUT /api/grocery-lists/{list_id}/items/{id}` — update
-   - `DELETE /api/grocery-lists/{list_id}/items/{id}` — delete
-   - `POST /api/grocery-lists/{list_id}/items/{id}/check` — toggle checked
-   - `POST /api/grocery-lists/{list_id}/clear-checked` — remove all checked items
-   - _Test: Full CRUD + check/uncheck via curl_
-
-3. **Implement auto-categorization**
-   - Maintain a Go map of common grocery items → category (e.g., "milk" → Dairy, "chicken" → Meat)
-   - On item add, if no category specified, look up the item name
-   - Fallback to "Other" if no match
-   - Allow manual override
-   - _Test: Add "bananas" → auto-categorized as Produce_
-
-4. **Build grocery list page**
-   - Items grouped by category with DaisyUI `collapse` sections (tap to expand/collapse)
-   - Each item: name, quantity/notes, `checkbox-lg`, `btn-ghost` delete
-   - Quick-add bar at top: DaisyUI `input-lg` with `join` button group for add action — prominent and fast
-   - Tap checkbox → item moves to "checked" section at bottom (strikethrough, dimmed via `opacity-40`)
-   - "Clear checked" button (`btn-lg btn-outline`) to remove purchased items
-   - _Test: Add items, check them off, clear checked items_
-
-5. **Add grocery count widget to dashboard**
-   - Badge showing unchecked item count on the default list
-   - Tap to navigate to full grocery list
-   - _Test: Badge updates as items are added/checked_
+1. **~~Create grocery database tables~~** ✅ (11 seeded categories, default list)
+2. **~~Build grocery item API~~** ✅
+3. **~~Implement auto-categorization~~** ✅
+4. **~~Build grocery list page~~** ✅
+5. **~~Add grocery count widget to dashboard~~** ✅
 
 ---
 
@@ -303,65 +119,24 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** When someone adds a grocery item from their phone, the kitchen screen updates instantly.
 
-**Status:** Complete
-
 #### Tasks
 
-1. **~~Set up WebSocket server~~** ✅
-   - WebSocket endpoint: `GET /ws`
-   - Hub pattern: track connected clients, broadcast messages
-   - Message format: JSON `{ "type": "event_created", "entity": "grocery_item", "id": 42, "list_id": 1 }`
-   - Reconnect logic on client side (Alpine.js or vanilla JS)
-   - _Test: Two browser tabs connected, verify both receive messages_
-
+1. **~~Set up WebSocket server~~** ✅ (hub pattern, JSON messages)
 2. **~~Integrate WebSocket broadcasts into API handlers~~** ✅
-   - After every successful create/update/delete, broadcast a change notification
-   - Include enough data for the client to know what changed (entity type, ID, action)
-   - _Test: Add a grocery item in one tab, see it appear in another_
-
 3. **~~Implement client-side htmx refresh on WebSocket message~~** ✅
-   - On receiving a relevant WebSocket message, trigger an htmx request to re-fetch the affected section
-   - Scope refreshes narrowly: grocery change only refreshes grocery list, not the whole page
-   - Dashboard widgets refresh independently based on message type
-   - _Test: Full round-trip — add event on phone, kitchen screen calendar updates without manual refresh_
 
 ---
 
 ### Milestone 1.8: Responsive Mobile Companion ✅
 
-**Goal:** The same app works well on a phone browser for on-the-go use (checking grocery list at the store, adding events from work).
-
-**Status:** Complete
+**Goal:** The same app works well on a phone browser for on-the-go use.
 
 #### Tasks
 
-1. **~~Responsive layout audit and fixes~~** ✅
-   - All pages work at 375px width (iPhone SE) through 1920px (kitchen screen)
-   - Dashboard: stacks widgets vertically on mobile (already working)
-   - Calendar: day view scrollable timeline, week view 2-column grid on mobile
-   - Grocery list: optimized spacing for one-handed phone use at the store
-   - Navigation: responsive bottom tab bar (small on mobile, large on desktop)
-   - All modals fit within mobile viewport with `w-[calc(100%-2rem)]`
-   - Form grids stack to single column on small screens
-   - _Test: All pages usable on phone-sized viewport_
-
+1. **~~Responsive layout audit and fixes~~** ✅ (375px–1920px)
 2. **~~Touch interaction audit~~** ✅
-   - All interactive elements use DaisyUI `-lg` size variants at minimum
-   - No hover-dependent interactions (DaisyUI's focus/active states handle this well)
-   - FAB buttons positioned for mobile nav clearance
-   - _Test: Navigate entire app on a real phone_
-
-3. **~~Add to Home Screen / PWA basics~~** ✅
-   - `manifest.json` with app name, icons (192px + 512px), theme color, standalone display
-   - Service worker for offline shell caching (network-first with cache fallback, pre-caches CDN assets)
-   - Fullscreen display mode when added to home screen
-   - Apple-specific meta tags for iOS support
-   - _Test: Add to home screen on Android/iOS, app opens fullscreen_
-
-4. **~~Network-aware behavior~~** ✅
-   - Connection status banner ("Reconnecting...") shown when WebSocket disconnects
-   - Banner auto-hides when connection is restored
-   - _Test: Disconnect WiFi, app shows offline state, reconnect restores_
+3. **~~Add to Home Screen / PWA basics~~** ✅ (manifest.json, service worker)
+4. **~~Network-aware behavior~~** ✅ (reconnection banner)
 
 ---
 
@@ -369,81 +144,73 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 **Goal:** Optimize the experience for a dedicated kitchen touchscreen running in kiosk mode.
 
-**Status:** Complete
-
 #### Tasks
 
 1. **~~Idle / screensaver mode~~** ✅
-   - After configurable inactivity timeout (default 5 minutes), transition to idle mode
-   - Idle mode: dimmed screen showing clock, date, and next upcoming event
-   - Any touch returns to full dashboard
-   - CSS `prefers-reduced-motion` respected
-   - _Test: Leave app idle, screen dims, tap to wake_
-
 2. **~~Night mode scheduling~~** ✅
-   - Configurable quiet hours (e.g., 10pm–6am)
-   - During quiet hours: very dim display, minimal content
-   - _Test: Set quiet hours, verify dimming activates on schedule_
-
 3. **~~Kiosk deployment documentation~~** ✅
-   - Raspberry Pi setup guide: OS, browser in kiosk mode, auto-start on boot
-   - Chromium flags for kiosk: `--kiosk --noerrdialogs --disable-infobars`
-   - Auto-restart on crash
-   - Touchscreen calibration notes
-   - _Test: Follow guide on a fresh Raspberry Pi, app runs in kiosk mode on boot_
-
 4. **~~Burn-in prevention~~** ✅
-   - Subtle periodic pixel shift (1-2px every few minutes) during idle
-   - Alternating dark/light elements in idle mode
-   - _Test: Verify pixel shift is imperceptible but measurable_
 
 ---
 
 ## Phase 2: Quality of Life
 
-Phase 2 adds features that make the app stickier and more connected to the family's existing digital life.
+Phase 2 adds features that make the app stickier and more connected to the family's existing digital life. Some milestones are complete; the remainder are prioritized below.
 
 ---
 
-### Milestone 2.1: CalDAV Integration
+### Milestone 2.1: Notes & Message Board ✅
 
-**Goal:** Bidirectional sync with Google Calendar, iCloud, or any CalDAV server.
+**Goal:** Replace sticky notes on the fridge with pinned digital messages.
+
+**Status:** Complete
 
 #### Tasks
 
-1. **Research and select Go CalDAV library**
-   - Evaluate `emersion/go-webdav` or similar
-   - Determine if acting as CalDAV client (syncing FROM Google/iCloud) or server (others sync TO Gamwich), or both
-   - Document decision and limitations
-   - _Test: Spike — connect to a test CalDAV server, list calendars_
-
-2. **Build CalDAV client sync**
-   - Settings page: add CalDAV account (URL, username, password/token)
-   - Periodic sync job (configurable interval, default 15 minutes)
-   - Map external events to Gamwich events, track sync state (etag/ctag)
-   - Handle conflicts: external wins by default, with option to flag for review
-   - _Test: Connect to Google Calendar via CalDAV, events appear in Gamwich_
-
-3. **Build outbound sync (Gamwich → CalDAV)**
-   - Events created/modified in Gamwich push to the linked CalDAV calendar
-   - Respect sync direction settings (one-way in, one-way out, bidirectional)
-   - _Test: Create event in Gamwich, verify it appears in Google Calendar_
-
-4. **Calendar source indicators in UI**
-   - Visual badge on events showing origin (Gamwich, Google, iCloud, etc.)
-   - External events may be read-only depending on sync settings
-   - _Test: Mixed calendar view shows events from multiple sources with clear attribution_
+1. **~~Create notes database table~~** ✅ (priority enum: urgent/normal/fun)
+2. **~~Build notes API~~** ✅ (CRUD + auto-expire cleanup)
+3. **~~Build notes page~~** ✅ (card-based, color-coded by priority)
+4. **~~Add pinned notes widget to dashboard~~** ✅
 
 ---
 
-### Milestone 2.2: Meal Planning
+### Milestone 2.2: Rewards & Points System ✅
+
+**Goal:** Optional gamification to motivate chore completion, especially for kids.
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Add points infrastructure~~** ✅ (rewards table, reward_redemptions)
+2. **~~Build points tracking~~** ✅
+3. **~~Build reward management~~** ✅ (settings page + redemption flow)
+4. **~~Add points/rewards UI elements~~** ✅ (leaderboard widget)
+
+---
+
+### Milestone 2.3: Visual Polish & Theming ✅
+
+**Goal:** DaisyUI theme system with curated themes and auto dark mode.
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Theme selection~~** ✅ (garden, forest, gamwich custom theme)
+2. **~~Auto dark mode~~** ✅ (system preference + quiet hours)
+3. **~~Animations and micro-interactions~~** ✅
+
+---
+
+### Milestone 2.4: Meal Planning
 
 **Goal:** Plan meals for the week, display tonight's dinner on the dashboard, and push ingredients to the grocery list.
 
 #### Tasks
 
 1. **Create meal planning database tables**
-   - Migration: `meals` table (`id`, `date`, `meal_type`, `title`, `recipe_url`, `notes`, `created_at`, `updated_at`)
+   - Migration: `meals` table (`id`, `household_id`, `date`, `meal_type`, `title`, `recipe_url`, `notes`, `created_at`, `updated_at`)
    - Migration: `meal_ingredients` table (`id`, `meal_id`, `name`, `quantity`, `unit`, `category`)
    - `meal_type` enum: breakfast, lunch, dinner, snack
    - _Test: Migrations run_
@@ -454,6 +221,7 @@ Phase 2 adds features that make the app stickier and more connected to the famil
    - `PUT /api/meals/{id}` — update
    - `DELETE /api/meals/{id}` — remove from plan
    - `POST /api/meals/{id}/to-grocery` — push ingredients to grocery list
+   - All endpoints scoped to household via auth context
    - _Test: CRUD + grocery push via curl_
 
 3. **Build weekly meal planning page**
@@ -463,7 +231,7 @@ Phase 2 adds features that make the app stickier and more connected to the famil
    - _Test: Plan a week of dinners, push ingredients to grocery list_
 
 4. **Build family favorites**
-   - `saved_meals` table: title, recipe_url, notes, ingredients, use_count
+   - `saved_meals` table: title, recipe_url, notes, ingredients, use_count, household_id
    - "Save as favorite" option when adding a meal
    - Quick-add from favorites when planning
    - _Test: Save a meal, reuse it on another day_
@@ -476,71 +244,34 @@ Phase 2 adds features that make the app stickier and more connected to the famil
 
 ---
 
-### Milestone 2.3: Rewards & Points System
+### Milestone 2.5: CalDAV Integration
 
-**Goal:** Optional gamification to motivate chore completion, especially for kids.
-
-#### Tasks
-
-1. **Add points infrastructure**
-   - `points` column already exists on `chores` table
-   - Migration: `rewards` table (`id`, `title`, `description`, `point_cost`, `active`, `created_at`)
-   - Migration: `reward_redemptions` table (`id`, `reward_id`, `redeemed_by`, `redeemed_at`)
-   - _Test: Migrations run_
-
-2. **Build points tracking**
-   - On chore completion, credit points to the completing family member
-   - `GET /api/family-members/{id}/points` — current balance (sum of earned minus redeemed)
-   - Points history view
-   - _Test: Complete chores, verify point balance increases_
-
-3. **Build reward management**
-   - Settings page: add/edit/delete rewards with point costs
-   - Rewards page: family members see available rewards and their point balance
-   - Redeem button (with confirmation)
-   - _Test: Create reward, earn enough points via chores, redeem reward_
-
-4. **Add points/rewards UI elements**
-   - Points balance on family member avatars (dashboard)
-   - "You earned X points!" feedback on chore completion
-   - Optional leaderboard widget (can be disabled in settings)
-   - _Test: Full flow visible in UI — complete chore, see points, redeem reward_
-
----
-
-### Milestone 2.4: Notes & Message Board
-
-**Goal:** Replace sticky notes on the fridge with pinned digital messages.
+**Goal:** Bidirectional sync with Google Calendar, iCloud, or any CalDAV server.
 
 #### Tasks
 
-1. **Create notes database table**
-   - Migration: `notes` table (`id`, `title`, `body`, `author_id`, `pinned`, `priority`, `expires_at`, `created_at`, `updated_at`)
-   - Priority enum: urgent (red), normal (blue), fun (green)
-   - _Test: Migration runs_
+1. **Research and select Go CalDAV library**
+   - Evaluate `emersion/go-webdav` or similar
+   - Determine if acting as CalDAV client, server, or both
+   - Document decision and limitations
 
-2. **Build notes API**
-   - `POST /api/notes` — create
-   - `GET /api/notes` — list (pinned first, then by created_at desc)
-   - `PUT /api/notes/{id}` — update
-   - `DELETE /api/notes/{id}` — delete
-   - Auto-delete expired notes via periodic cleanup job
-   - _Test: CRUD via curl, expired notes get cleaned up_
+2. **Build CalDAV client sync**
+   - Settings page: add CalDAV account (URL, username, password/token)
+   - Periodic sync job (configurable interval, default 15 minutes)
+   - Map external events to Gamwich events, track sync state (etag/ctag)
+   - Handle conflicts: external wins by default, option to flag for review
 
-3. **Build notes page**
-   - Card-based layout, color-coded by priority
-   - Quick-add: title + body + optional expiry
-   - Pin/unpin toggle
-   - _Test: Create notes, pin one, verify pinned notes stay at top_
+3. **Build outbound sync (Gamwich → CalDAV)**
+   - Events created/modified in Gamwich push to the linked CalDAV calendar
+   - Respect sync direction settings (one-way in, one-way out, bidirectional)
 
-4. **Add pinned notes widget to dashboard**
-   - Show pinned notes as small cards/banners on the dashboard
-   - Urgent notes get prominent placement
-   - _Test: Pin a note, verify it appears on dashboard_
+4. **Calendar source indicators in UI**
+   - Visual badge on events showing origin (Gamwich, Google, iCloud, etc.)
+   - External events may be read-only depending on sync settings
 
 ---
 
-### Milestone 2.5: Smart Grocery Features
+### Milestone 2.6: Smart Grocery Features
 
 **Goal:** Make the grocery list smarter with frequent items and better categorization.
 
@@ -549,32 +280,307 @@ Phase 2 adds features that make the app stickier and more connected to the famil
 1. **Build frequent items tracking**
    - Track item add frequency over time
    - `GET /api/grocery-lists/{list_id}/frequent` — return top 20 most-added items
-   - _Test: Add items repeatedly, frequent items list reflects usage_
 
 2. **Build frequent items quick-add panel**
    - Row of chips/buttons above the grocery list showing frequent items
    - Tap to add with previous quantity/category
-   - _Test: Frequently added item appears as a quick-add chip, tap adds it to the list_
 
 3. **Improve auto-categorization**
    - Expand the static item → category map
-   - Learn from manual category overrides (store user corrections and apply them next time)
-   - _Test: Manually categorize an item, add it again later, correct category applied automatically_
+   - Learn from manual category overrides (store user corrections)
 
 4. **Checked items archive / re-add**
    - After clearing checked items, store them in a "recently purchased" list
    - Easy re-add: "You bought these last time" panel
-   - _Test: Clear checked items, see them in recently purchased, re-add one_
 
 ---
 
-## Phase 3: Polish & Extended Features
+## Phase 3: Authentication & Multi-Tenancy ✅
 
-Phase 3 is about refinement, automation, and making the app delightful for long-term daily use.
+**Status:** Complete — see `dev/auth-plan.md` for the detailed implementation plan.
+
+This phase added the auth foundation required by all product tiers.
 
 ---
 
-### Milestone 3.1: Chore Rotation & Automation
+### Milestone 3.1: Database Migration & Auth Models ✅
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Auth migration (011_add_auth.sql)~~** ✅
+   - New tables: `households`, `users`, `household_members`, `sessions`, `magic_links`
+   - Added `household_id` FK to all existing tables (family_members, calendar_events, chore_areas, chores, grocery_categories, grocery_lists, notes, rewards, settings)
+   - Rebuilt UNIQUE constraints as `UNIQUE(household_id, name)` for family_members and chore_areas
+   - Default household backfill for existing data
+
+2. **~~New models~~** ✅
+   - `User`, `Household`, `HouseholdMember`, `Session`, `MagicLink`
+
+---
+
+### Milestone 3.2: Auth Infrastructure ✅
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Auth stores~~** ✅ — user, household, session, magic_link (all with tests)
+2. **~~Email client~~** ✅ — Postmark integration (`internal/email/postmark.go`)
+3. **~~Auth context~~** ✅ — `internal/auth/context.go` with `AuthContext{UserID, HouseholdID, Role}`
+4. **~~Middleware~~** ✅ — `RequireAuth`, `RequireAdmin` with HTMX-aware redirects
+5. **~~Rate limiting~~** ✅ — in-memory rate limiter for auth endpoints
+
+---
+
+### Milestone 3.3: Tenant-Scope All Stores & Handlers ✅
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Add householdID parameter to all store methods~~** ✅
+2. **~~Extract householdID from auth context in all handlers~~** ✅
+3. **~~Validate active user cookie against current household~~** ✅
+
+---
+
+### Milestone 3.4: Auth Routes, Templates & Polish ✅
+
+**Status:** Complete
+
+#### Tasks
+
+1. **~~Auth handlers~~** ✅ — login, register, verify, invite, logout, household switching
+2. **~~Auth templates~~** ✅ — login, register, check_email, households picker
+3. **~~Route split~~** ✅ — public routes (login/register/verify) vs protected routes (all else)
+4. **~~Layout updates~~** ✅ — user info + logout in header, invite section in settings
+5. **~~Household-scoped WebSocket broadcasts~~** ✅
+6. **~~Cleanup goroutine~~** ✅ — hourly expired session/magic link cleanup
+
+---
+
+## Phase 4: Cloud Services (Paid Tier)
+
+The Cloud tier monetizes the natural desire for remote access and data safety. The app still runs on the user's hardware — the Cloud tier adds connectivity and peace of mind. Target price: ~$5/month ($50/year).
+
+**Prerequisite:** Phase 3 (auth & multi-tenancy) ✅
+
+---
+
+### Milestone 4.1: Billing & License Key System
+
+**Goal:** Stripe integration for subscription management and a license key mechanism to activate paid features on self-hosted instances.
+
+#### Tasks
+
+1. **Design subscription data model**
+   - Migration: `subscriptions` table (`id`, `household_id` FK, `stripe_customer_id`, `stripe_subscription_id`, `plan` (cloud/hosted), `status` (active/past_due/cancelled), `current_period_end`, `created_at`, `updated_at`)
+   - Migration: `license_keys` table (`id`, `household_id` FK, `key` (UNIQUE), `plan`, `activated_at`, `expires_at`)
+   - _Test: Migrations run_
+
+2. **Build Stripe integration**
+   - `internal/billing/stripe.go` — Stripe SDK wrapper
+   - Checkout session creation (monthly + annual pricing for Cloud and Hosted)
+   - Webhook handler: `POST /webhooks/stripe` — process `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`
+   - Webhook signature verification for security
+   - _Test: Webhook handler processes test events correctly_
+
+3. **Build subscription management**
+   - `internal/store/subscription.go` — Create, GetByHousehold, Update, IsActive
+   - Account page: view plan, manage billing (link to Stripe Customer Portal), cancel
+   - Graceful degradation: if subscription lapses, tunnel and backups stop but local app continues
+   - _Test: Subscription lifecycle — create, verify active, cancel, verify inactive_
+
+4. **Build license key system**
+   - On Cloud tier activation, generate a license key tied to the household
+   - Self-hosted instance sends key to activation endpoint to enable paid features
+   - `internal/license/license.go` — Validate, CheckActive (periodic check against server)
+   - Feature gating: `license.HasFeature("tunnel")`, `license.HasFeature("backup")`
+   - Offline grace period: paid features continue for 7 days if the instance can't reach the license server
+   - _Test: Generate key, activate, verify features enabled, expire, verify features disabled_
+
+5. **Build account management UI**
+   - Settings page section: "Subscription" — current plan, upgrade/downgrade, billing portal link
+   - Upgrade CTA: contextual prompts ("Access Gamwich from work? Try Cloud for $5/month") — non-intrusive, dismissable
+   - _Test: Full upgrade flow — click upgrade, complete Stripe checkout, features activate_
+
+---
+
+### Milestone 4.2: Remote Access Tunnel
+
+**Goal:** Access a self-hosted Gamwich instance from anywhere without port forwarding, VPN, or dynamic DNS.
+
+#### Tasks
+
+1. **Cloudflare Tunnel integration**
+   - `internal/tunnel/cloudflare.go` — wraps `cloudflared` client library or manages subprocess
+   - On Cloud tier activation: register instance with Gamwich's Cloudflare account
+   - Assign subdomain: `{household-slug}.tunnel.gamwich.app`
+   - TLS, DDoS protection, and edge routing handled by Cloudflare
+   - _Test: Tunnel connects, external request reaches local instance_
+
+2. **Tunnel lifecycle management**
+   - Start tunnel on app startup if Cloud tier is active
+   - Graceful shutdown on app stop
+   - Auto-reconnect on network interruption
+   - Health check endpoint visible through tunnel
+   - Status indicator in settings page ("Tunnel: Connected" / "Disconnected")
+   - _Test: Tunnel reconnects after network interruption_
+
+3. **Tunnel configuration UI**
+   - Settings page: enable/disable tunnel, view assigned subdomain, connection status
+   - First-time setup: guided flow to activate Cloud tier and establish tunnel
+   - _Test: Toggle tunnel on/off from settings, status updates in real-time_
+
+4. **Security considerations**
+   - All traffic through tunnel uses existing session auth (no additional auth layer needed)
+   - Rate limiting applies to tunnel traffic the same as direct traffic
+   - Tunnel only exposes the Gamwich HTTP server, not the host machine
+   - Document: users should still set strong PINs for family members when using remote access
+
+---
+
+### Milestone 4.3: Encrypted Offsite Backups
+
+**Goal:** Daily encrypted backup of the SQLite database to managed cloud storage. One-click restore from any snapshot.
+
+#### Tasks
+
+1. **Build backup agent**
+   - `internal/backup/agent.go` — backup lifecycle management
+   - Flow: checkpoint SQLite WAL → copy database → encrypt with household-specific key → upload to S3-compatible storage
+   - Encryption: AES-256-GCM, key derived from a user-held secret (configured during Cloud setup)
+   - Schedule: daily (configurable), retention: 30 days default
+   - _Test: Backup runs, file is encrypted, uploaded to test S3 bucket_
+
+2. **Build backup API**
+   - `POST /api/backup/now` — trigger manual backup (admin only)
+   - `GET /api/backup/history` — list available backup snapshots with timestamps and sizes
+   - `POST /api/backup/restore` — download, decrypt, replace database, restart app
+   - `GET /api/backup/download/{id}` — download encrypted backup file
+   - _Test: Manual backup, list snapshots, restore from backup_
+
+3. **Build backup settings UI**
+   - Settings page section: backup schedule, retention period, last backup timestamp, backup history
+   - "Backup Now" button with progress indicator
+   - Restore flow: select snapshot → confirm → restore (with safety warning)
+   - Backup secret management: set/rotate the encryption passphrase
+   - _Test: Full round-trip — configure, backup, verify in history, restore_
+
+4. **Server-side infrastructure**
+   - S3-compatible storage (AWS S3, Cloudflare R2, or MinIO)
+   - Per-household storage prefix (isolated paths)
+   - Cleanup job: delete backups past retention window
+   - Storage usage tracking per household (for future quota enforcement)
+   - _Test: Multiple households backup without interference, old backups cleaned up_
+
+---
+
+### Milestone 4.4: Push Notifications
+
+**Goal:** Mobile push notifications for calendar reminders, chore due dates, and grocery list updates.
+
+#### Tasks
+
+1. **Add push subscription data model**
+   - Migration: `push_subscriptions` table (`id`, `user_id` FK, `household_id` FK, `endpoint`, `p256dh_key`, `auth_key`, `created_at`)
+   - _Test: Migration runs_
+
+2. **Build Web Push integration**
+   - `internal/push/push.go` — Web Push protocol (RFC 8030) using VAPID
+   - Generate VAPID keys on first run, store in config
+   - `SendNotification(subscription, title, body, url)` method
+   - _Test: Send test notification to a push endpoint_
+
+3. **Build notification triggers**
+   - Calendar reminder: configurable lead time (15 min, 1 hour, 1 day before event)
+   - Chore due: morning notification for today's due chores
+   - Grocery list: notification when items are added (configurable, off by default to avoid noise)
+   - Background scheduler: check for pending notifications every minute
+   - _Test: Create event with reminder, notification fires at correct time_
+
+4. **Build push subscription UI**
+   - Service worker handles push events and displays system notifications
+   - Settings page: enable/disable notification types, manage subscriptions per device
+   - "Enable notifications" prompt with browser permission request
+   - _Test: Subscribe, receive test notification, toggle types, unsubscribe_
+
+---
+
+## Phase 5: Hosted Tier
+
+The Hosted tier targets non-technical families who want the Gamwich experience without managing hardware. We run the instance, they open a browser. Target price: ~$10/month ($100/year).
+
+**Prerequisite:** Phase 4 (billing system) — shared Stripe integration
+
+---
+
+### Milestone 5.1: Multi-Tenant Hosted Infrastructure
+
+**Goal:** Automated provisioning of managed Gamwich instances for paying customers.
+
+#### Tasks
+
+1. **Choose hosting platform**
+   - Evaluate: Fly.io (per-app machines), Railway (container-based), bare VPS with Docker
+   - Decision criteria: cost per idle instance, cold start time, operational simplicity
+   - Target: <$3/month infrastructure cost per household at scale
+   - Document decision and architecture
+
+2. **Build provisioning system**
+   - `internal/hosted/provisioner.go` — create/destroy/pause Gamwich instances
+   - On sign-up: create container → assign subdomain → run migrations → seed defaults → ready in <30 seconds
+   - Custom subdomain routing: `{family}.gamwich.app` → correct instance
+   - Shared reverse proxy (Caddy or Traefik) routes subdomains to instances
+   - _Test: Provision instance, access via subdomain, data is isolated_
+
+3. **Build instance lifecycle management**
+   - Auto-pause: if no requests for 7+ days, pause instance (reduce costs)
+   - Auto-wake: first request to paused instance wakes it (<5 seconds)
+   - Auto-update: roll new Gamwich versions to all hosted instances
+   - Monitoring: health checks, resource usage per instance
+   - _Test: Instance pauses after inactivity, wakes on request_
+
+4. **Hosted sign-up flow**
+   - Landing page: pricing, feature comparison, "Start free trial" CTA
+   - Sign-up: email → choose household name → Stripe checkout → provision instance → redirect to `{family}.gamwich.app`
+   - 14-day free trial (no credit card required for trial, required to continue)
+   - _Test: Full sign-up flow end-to-end_
+
+---
+
+### Milestone 5.2: Hosted Tier Operations
+
+**Goal:** Operational tooling for running a fleet of hosted Gamwich instances.
+
+#### Tasks
+
+1. **Admin dashboard**
+   - Internal tool (not customer-facing): list all hosted instances, status, resource usage
+   - Actions: pause/wake/delete instance, view logs, impersonate for support
+   - _Test: Admin can view and manage instances_
+
+2. **Automated backups for hosted instances**
+   - All hosted instances get daily backups automatically (no Cloud tier license needed)
+   - Same backup infrastructure as Cloud tier, just always-on
+   - Customer can download their data at any time (data portability)
+
+3. **Scale considerations**
+   - At 1,000+ hosted households: evaluate shared PostgreSQL backend for the hosted platform
+   - Self-hosted product stays on SQLite regardless
+   - Document the threshold and migration path
+
+---
+
+## Phase 6: Extended Features
+
+Features that add delight and depth for long-term daily use. These can be implemented in any order based on community demand.
+
+---
+
+### Milestone 6.1: Chore Rotation & Automation
 
 **Goal:** Chores automatically rotate between family members on a schedule.
 
@@ -583,65 +589,53 @@ Phase 3 is about refinement, automation, and making the app delightful for long-
 1. **Add rotation support to data model**
    - Add `rotation_members` (JSON array of family_member_ids) and `rotation_interval` to `chores` table
    - Add `current_rotation_index` to track position
-   - _Test: Migration runs_
 
 2. **Implement rotation logic**
-   - When a rotating chore's period elapses, advance the assignee to the next member in the list
-   - Handle edge cases: member removed from family, member temporarily skipped
-   - _Test: Unit tests — rotation advances correctly over multiple periods_
+   - When a rotating chore's period elapses, advance the assignee to the next member
+   - Handle edge cases: member removed, member skipped
 
 3. **Rotation UI**
    - Chore form: toggle "rotate between" → select members and interval
-   - Chore list: show "Your turn" badge, upcoming rotation preview ("Next week: Sarah")
-   - _Test: Create rotating chore, verify assignment changes on schedule_
+   - Chore list: "Your turn" badge, upcoming rotation preview
 
 ---
 
-### Milestone 3.2: Multi-List Support
+### Milestone 6.2: Multi-List Support
 
-**Goal:** Separate lists for different stores and purposes.
+**Goal:** Separate grocery lists for different stores and purposes.
 
 #### Tasks
 
 1. **Enable multiple grocery lists**
    - List management: create, rename, reorder, delete lists
-   - Each list has its own items and categories
-   - Default list configurable
-   - _Test: Create "Costco" and "Hardware Store" lists alongside the default_
+   - Each list has its own items and categories, default list configurable
 
 2. **Update grocery UI for multi-list**
    - Tab bar or dropdown to switch between lists
-   - Dashboard widget shows count from the default list, with indicators for other active lists
-   - _Test: Switch between lists, add items to different lists_
+   - Dashboard widget shows default list count with indicators for other active lists
 
 ---
 
-### Milestone 3.3: Import & Integrations
+### Milestone 6.3: Import & Integrations
 
 **Goal:** Reduce manual data entry by importing from external sources.
 
 #### Tasks
 
 1. **School calendar import**
-   - Import `.ics` file upload
-   - Parse iCal format, create events in Gamwich
-   - Optionally assign to a family member
-   - _Test: Upload a school calendar .ics file, events appear on the calendar_
+   - Import `.ics` file upload, parse iCal format, create events in Gamwich
 
 2. **Grocery list sharing**
-   - Shareable read-only link for a grocery list (for sending to someone at the store)
-   - No auth required on the shared link
-   - _Test: Generate share link, open in incognito, list is visible_
+   - Shareable read-only link for a grocery list (no auth required on shared link)
 
 3. **Data export**
    - Export all data as JSON backup
    - Export grocery list as plain text
    - Export calendar as .ics
-   - _Test: Export and verify data completeness_
 
 ---
 
-### Milestone 3.4: Kiosk Deployment Tooling
+### Milestone 6.4: Kiosk Deployment Tooling
 
 **Goal:** Make it dead simple to set up a new Gamwich kitchen screen.
 
@@ -650,83 +644,50 @@ Phase 3 is about refinement, automation, and making the app delightful for long-
 1. **Single-binary distribution**
    - Embed all static assets, templates, and migrations into the Go binary
    - `gamwich serve` starts everything with sane defaults
-   - `gamwich setup` runs an interactive first-time configuration (family name, timezone, weather location)
-   - _Test: Download binary, run setup, app works with no other dependencies_
+   - `gamwich setup` runs interactive first-time configuration
 
 2. **Docker image**
    - Dockerfile: minimal base image, single binary, SQLite volume mount
    - `docker-compose.yml` with volume for DB persistence
-   - _Test: `docker compose up`, app runs, data persists across restarts_
 
 3. **Raspberry Pi kiosk installer script**
-   - Bash script that: installs Chromium, configures kiosk mode, sets up systemd service for Gamwich, configures auto-start
-   - Handles screen rotation and resolution settings
-   - _Test: Run script on a fresh Raspberry Pi OS, device boots into Gamwich_
+   - Bash script: installs Chromium, configures kiosk mode, sets up systemd service, auto-start
 
-4. **Automatic backups**
+4. **Local backup/restore tooling**
    - Configurable backup schedule (daily default)
-   - SQLite `.backup` command to a configurable path (local directory, mounted NAS, etc.)
-   - Retain N backups with automatic cleanup
+   - SQLite `.backup` to configurable path, retain N backups with cleanup
    - Settings page: backup now, restore from backup, download backup
-   - _Test: Backup runs on schedule, restore works_
 
 ---
 
-### Milestone 3.5: Visual Polish & Theming
+### Milestone 6.5: Family Photo Idle Screen
 
-**Goal:** Make the app look and feel polished for daily use. DaisyUI's theme system does the heavy lifting here.
+**Goal:** Idle mode cycles through family photos with a clock overlay.
 
 #### Tasks
 
-1. **Theme selection**
-   - DaisyUI ships with 30+ themes — expose a curated subset in settings
-   - Recommended defaults: `garden` (light, warm), `forest` (dark, earthy), `cupcake` (light, playful), `dracula` (dark, bold)
-   - Add a custom `gamwich` theme with Shire-inspired greens and warm browns
-   - Theme toggle on settings page using DaisyUI `theme-controller`
-   - Persist selection per device
-   - _Test: Switch themes, all pages adapt instantly via DaisyUI's `data-theme` attribute_
+1. **Photo upload**
+   - Configure a photo directory or upload photos via settings page
+   - Store in `web/static/photos/` or a configurable path
 
-2. **Auto dark mode**
-   - Option to follow system preference (`prefers-color-scheme`)
-   - Option to follow quiet hours schedule (dark theme during night mode)
-   - _Test: Toggle system dark mode, app follows_
-
-3. **Animations and micro-interactions**
-   - Chore completion: satisfying checkmark animation (CSS transition on DaisyUI `checkbox`)
-   - List item add: smooth slide-in (htmx `swap` transitions)
-   - Page transitions: quick crossfade via htmx `hx-swap` with transition classes
-   - Keep it performant — no jank on Raspberry Pi
-   - _Test: Animations feel good on both desktop and Pi_
-
-4. **Family photo idle screen**
-   - Configure a photo directory or upload photos
-   - Idle mode cycles through family photos with clock overlay
-   - _Test: Add photos, idle mode displays them as a slideshow_
+2. **Slideshow idle mode**
+   - Idle mode transitions between photos with clock/date overlay
+   - Configurable transition timing and shuffle/sequential order
 
 ---
 
-### Milestone 3.6: Grocery Suggestions (Stretch)
+### Milestone 6.6: Grocery Suggestions (Stretch)
 
 **Goal:** Proactive reminders based on purchase history patterns.
 
 #### Tasks
 
 1. **Purchase history analysis**
-   - Track when items are added and cleared from the grocery list
-   - Calculate average purchase frequency per item
-   - _Test: Sufficient history data produces frequency calculations_
+   - Track when items are added and cleared, calculate average purchase frequency
 
 2. **Suggestion engine**
    - "It's been 2 weeks since you bought eggs — add to list?"
-   - Suggestions shown as dismissable cards on the grocery page
-   - Configurable: on/off, sensitivity threshold
-   - _Test: After establishing a pattern, suggestions appear at the right time_
-
-3. **Suggestion UI**
-   - Suggestion cards above the grocery list
-   - "Add" or "Dismiss" actions
-   - Dismissed suggestions don't reappear for that cycle
-   - _Test: Dismiss a suggestion, verify it doesn't come back immediately_
+   - Shown as dismissable cards, configurable sensitivity
 
 ---
 
@@ -735,24 +696,30 @@ Phase 3 is about refinement, automation, and making the app delightful for long-
 These apply throughout all phases and should be addressed continuously.
 
 ### Testing Strategy
-- **Unit tests:** Go — domain logic, recurrence expansion, date calculations, auto-categorization
-- **Integration tests:** API endpoints with test database
+- **Unit tests:** Go — domain logic, recurrence expansion, date calculations, auto-categorization, auth/session management
+- **Integration tests:** API endpoints with test database, cross-tenant isolation verification
 - **Manual testing:** Touchscreen interaction on actual device at each milestone
 - **Browser testing:** Chrome (kiosk), Safari (iOS companion), Firefox
 
 ### Configuration
-- **Environment-based config:** `GAMWICH_DB_PATH`, `GAMWICH_PORT`, `GAMWICH_TIMEZONE`, etc.
-- **Settings page in UI:** weather location, quiet hours, default list, theme, sync intervals
+- **Environment-based config:** `GAMWICH_DB_PATH`, `GAMWICH_PORT`, `GAMWICH_TIMEZONE`, `GAMWICH_POSTMARK_TOKEN`, `GAMWICH_BASE_URL`, `GAMWICH_FROM_EMAIL`, `GAMWICH_STRIPE_KEY`, `GAMWICH_STRIPE_WEBHOOK_SECRET`
+- **Settings page in UI:** weather location, quiet hours, default list, theme, sync intervals, notification preferences, backup schedule, tunnel status
 - **Config file:** TOML or YAML for initial setup, overridable by env vars
 
 ### Security
-- **Local network trust model:** no auth on local network by default
-- **Optional basic auth:** for remote access over Tailscale/WireGuard
-- **No sensitive data in the app** — this is grocery lists, not banking
-- **HTTPS via reverse proxy** (Caddy recommended) or built-in option
+- **Authentication:** Magic link passwordless auth (Postmark), session-based with HttpOnly cookies
+- **Multi-tenancy:** All data queries scoped to household via auth context — cross-tenant leakage is a critical bug
+- **Rate limiting:** In-memory rate limiter on auth endpoints (3 per email / 15 min, 10 per IP / 15 min)
+- **HTMX-aware auth:** Expired sessions return `HX-Redirect` header instead of HTTP redirect
+- **Tunnel security:** Remote access uses same session auth, tunnel only exposes Gamwich HTTP server
+- **Backup encryption:** AES-256-GCM with user-held key, server never stores plaintext backups
+- **Webhook verification:** Stripe webhook signatures verified before processing
+- **HTTPS:** Via reverse proxy (Caddy recommended) or built-in; required for remote access
 
 ### Performance Targets
 - **Page load:** <200ms on Raspberry Pi 4
 - **WebSocket latency:** <100ms for real-time updates
 - **Database:** SQLite handles household scale trivially — optimize only if measured
 - **Frontend:** Minimal JS, htmx keeps payload small, Alpine.js for interactivity without framework weight, DaisyUI for consistent components without custom CSS overhead
+- **Tunnel latency:** <50ms additional latency via Cloudflare edge
+- **Hosted provisioning:** <30 seconds from sign-up to usable instance
