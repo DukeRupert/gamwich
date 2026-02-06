@@ -17,6 +17,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
+	"github.com/dukerupert/gamwich/internal/websocket"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -28,10 +29,11 @@ type TemplateHandler struct {
 	choreStore   *store.ChoreStore
 	groceryStore *store.GroceryStore
 	weatherSvc   *weather.Service
+	hub          *websocket.Hub
 	templates    *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, w *weather.Service) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, w *weather.Service, hub *websocket.Hub) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
 	}
@@ -42,7 +44,14 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		choreStore:   cs,
 		groceryStore: gs,
 		weatherSvc:   w,
+		hub:          hub,
 		templates:    tmpl,
+	}
+}
+
+func (h *TemplateHandler) broadcast(msg websocket.Message) {
+	if h.hub != nil {
+		h.hub.Broadcast(msg)
 	}
 }
 
@@ -350,11 +359,14 @@ func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Req
 
 	recurrenceRule := r.FormValue("recurrence_rule")
 
-	if _, err := h.eventStore.CreateWithRecurrence(title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
+	event, err := h.eventStore.CreateWithRecurrence(title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule)
+	if err != nil {
 		log.Printf("create event: %v", err)
 		http.Error(w, "failed to create event", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("calendar_event", "created", event.ID, nil))
 
 	w.Header().Set("HX-Trigger", "closeEventModal")
 
@@ -533,6 +545,8 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	h.broadcast(websocket.NewMessage("calendar_event", "updated", id, nil))
+
 	w.Header().Set("HX-Trigger", "closeEventModal")
 
 	data, err := h.buildDayViewData(date)
@@ -611,6 +625,8 @@ func (h *TemplateHandler) CalendarEventDeleteForm(w http.ResponseWriter, r *http
 			return
 		}
 	}
+
+	h.broadcast(websocket.NewMessage("calendar_event", "deleted", id, nil))
 
 	w.Header().Set("HX-Trigger", "closeEventModal")
 
@@ -810,11 +826,14 @@ func (h *TemplateHandler) ChoreCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := h.choreStore.Create(title, description, areaID, points, recurrenceRule, assignedTo); err != nil {
+	newChore, err := h.choreStore.Create(title, description, areaID, points, recurrenceRule, assignedTo)
+	if err != nil {
 		log.Printf("create chore: %v", err)
 		http.Error(w, "failed to create chore", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore", "created", newChore.ID, nil))
 
 	w.Header().Set("HX-Trigger", "closeChoreModal")
 	h.renderToast(w, "success", "Chore created")
@@ -872,6 +891,8 @@ func (h *TemplateHandler) ChoreUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("chore", "updated", id, nil))
+
 	w.Header().Set("HX-Trigger", "closeChoreModal")
 	h.renderToast(w, "success", "Chore updated")
 
@@ -895,6 +916,8 @@ func (h *TemplateHandler) ChoreDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to delete chore", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore", "deleted", id, nil))
 
 	w.Header().Set("HX-Trigger", "closeChoreModal")
 	h.renderToast(w, "success", "Chore deleted")
@@ -927,6 +950,8 @@ func (h *TemplateHandler) ChoreComplete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("chore", "completed", id, nil))
+
 	h.renderToast(w, "success", "Chore completed!")
 
 	choreData, err := h.buildChoreListData("all", 0)
@@ -957,6 +982,8 @@ func (h *TemplateHandler) ChoreUndoComplete(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
+
+	h.broadcast(websocket.NewMessage("chore", "completion_undone", id, nil))
 
 	h.renderToast(w, "success", "Completion undone")
 
@@ -1027,11 +1054,14 @@ func (h *TemplateHandler) ChoreAreaCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, err := h.choreStore.CreateArea(name, 0); err != nil {
+	area, err := h.choreStore.CreateArea(name, 0)
+	if err != nil {
 		log.Printf("create area: %v", err)
 		http.Error(w, "failed to create area", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore_area", "created", area.ID, nil))
 
 	h.renderToast(w, "success", "Area created")
 	areas, _ := h.choreStore.ListAreas()
@@ -1068,6 +1098,8 @@ func (h *TemplateHandler) ChoreAreaUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("chore_area", "updated", id, nil))
+
 	h.renderToast(w, "success", "Area updated")
 	areas, _ := h.choreStore.ListAreas()
 	h.renderPartial(w, "chore-area-list", map[string]any{"Areas": areas})
@@ -1085,6 +1117,8 @@ func (h *TemplateHandler) ChoreAreaDelete(w http.ResponseWriter, r *http.Request
 		http.Error(w, "failed to delete area", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore_area", "deleted", id, nil))
 
 	h.renderToast(w, "success", "Area deleted")
 	areas, _ := h.choreStore.ListAreas()
@@ -1465,11 +1499,14 @@ func (h *TemplateHandler) GroceryItemAdd(w http.ResponseWriter, r *http.Request)
 
 	cat := grocery.Categorize(name)
 
-	if _, err := h.groceryStore.CreateItem(list.ID, name, "", "", "", cat, addedBy); err != nil {
+	item, err := h.groceryStore.CreateItem(list.ID, name, "", "", "", cat, addedBy)
+	if err != nil {
 		log.Printf("create grocery item: %v", err)
 		http.Error(w, "failed to create item", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "created", item.ID, map[string]any{"list_id": list.ID}))
 
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
@@ -1499,6 +1536,8 @@ func (h *TemplateHandler) GroceryItemToggle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("grocery_item", "checked", id, nil))
+
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
 		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
@@ -1519,6 +1558,8 @@ func (h *TemplateHandler) GroceryItemDelete(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to delete item", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "deleted", id, nil))
 
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
@@ -1541,6 +1582,8 @@ func (h *TemplateHandler) GroceryClearChecked(w http.ResponseWriter, r *http.Req
 		http.Error(w, "failed to clear checked", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "cleared", 0, map[string]any{"list_id": list.ID}))
 
 	h.renderToast(w, "success", fmt.Sprintf("Cleared %d item(s)", count))
 
@@ -1612,6 +1655,8 @@ func (h *TemplateHandler) GroceryItemUpdate(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to update item", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "updated", id, nil))
 
 	w.Header().Set("HX-Trigger", "closeGroceryModal")
 	h.renderToast(w, "success", "Item updated")
@@ -1922,10 +1967,13 @@ func (h *TemplateHandler) FamilyMemberCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if _, err := h.store.Create(name, color, avatarEmoji); err != nil {
+	member, err := h.store.Create(name, color, avatarEmoji)
+	if err != nil {
 		http.Error(w, "failed to create family member", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("family_member", "created", member.ID, nil))
 
 	members, err := h.store.List()
 	if err != nil {
@@ -1977,6 +2025,8 @@ func (h *TemplateHandler) FamilyMemberUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("family_member", "updated", id, nil))
+
 	members, err := h.store.List()
 	if err != nil {
 		http.Error(w, "failed to load family members", http.StatusInternalServerError)
@@ -1997,6 +2047,8 @@ func (h *TemplateHandler) FamilyMemberDelete(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "failed to delete family member", http.StatusInternalServerError)
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("family_member", "deleted", id, nil))
 
 	members, err := h.store.List()
 	if err != nil {

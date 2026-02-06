@@ -11,15 +11,23 @@ import (
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/websocket"
 )
 
 type CalendarEventHandler struct {
 	eventStore  *store.EventStore
 	memberStore *store.FamilyMemberStore
+	hub         *websocket.Hub
 }
 
-func NewCalendarEventHandler(es *store.EventStore, ms *store.FamilyMemberStore) *CalendarEventHandler {
-	return &CalendarEventHandler{eventStore: es, memberStore: ms}
+func NewCalendarEventHandler(es *store.EventStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *CalendarEventHandler {
+	return &CalendarEventHandler{eventStore: es, memberStore: ms, hub: hub}
+}
+
+func (h *CalendarEventHandler) broadcast(msg websocket.Message) {
+	if h.hub != nil {
+		h.hub.Broadcast(msg)
+	}
 }
 
 type eventRequest struct {
@@ -90,6 +98,8 @@ func (h *CalendarEventHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create event"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("calendar_event", "created", event.ID, nil))
 
 	writeJSON(w, http.StatusCreated, event)
 }
@@ -224,6 +234,8 @@ func (h *CalendarEventHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("calendar_event", "updated", id, nil))
+
 	writeJSON(w, http.StatusOK, event)
 }
 
@@ -248,6 +260,8 @@ func (h *CalendarEventHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete event"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("calendar_event", "deleted", id, nil))
 
 	w.WriteHeader(http.StatusNoContent)
 }

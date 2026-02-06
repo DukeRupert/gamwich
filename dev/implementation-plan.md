@@ -299,25 +299,27 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.7: Real-Time Sync with WebSockets
+### Milestone 1.7: Real-Time Sync with WebSockets ✅
 
 **Goal:** When someone adds a grocery item from their phone, the kitchen screen updates instantly.
 
+**Status:** Complete
+
 #### Tasks
 
-1. **Set up WebSocket server**
+1. **~~Set up WebSocket server~~** ✅
    - WebSocket endpoint: `GET /ws`
    - Hub pattern: track connected clients, broadcast messages
    - Message format: JSON `{ "type": "event_created", "entity": "grocery_item", "id": 42, "list_id": 1 }`
    - Reconnect logic on client side (Alpine.js or vanilla JS)
    - _Test: Two browser tabs connected, verify both receive messages_
 
-2. **Integrate WebSocket broadcasts into API handlers**
+2. **~~Integrate WebSocket broadcasts into API handlers~~** ✅
    - After every successful create/update/delete, broadcast a change notification
    - Include enough data for the client to know what changed (entity type, ID, action)
    - _Test: Add a grocery item in one tab, see it appear in another_
 
-3. **Implement client-side htmx refresh on WebSocket message**
+3. **~~Implement client-side htmx refresh on WebSocket message~~** ✅
    - On receiving a relevant WebSocket message, trigger an htmx request to re-fetch the affected section
    - Scope refreshes narrowly: grocery change only refreshes grocery list, not the whole page
    - Dashboard widgets refresh independently based on message type

@@ -136,6 +136,12 @@
             activeSection: '{{.ActiveSection}}',
             currentDate: '',
             currentTime: '',
+            init() {
+                document.body.dataset.activeSection = this.activeSection;
+                this.$watch('activeSection', val => {
+                    document.body.dataset.activeSection = val;
+                });
+            },
             startClock() {
                 this.updateClock();
                 setInterval(() => this.updateClock(), 1000);
@@ -155,6 +161,79 @@
             }
         }
     }
+    </script>
+
+    <script>
+    (function() {
+        var ws = null;
+        var reconnectDelay = 1000;
+        var maxReconnectDelay = 30000;
+
+        function connect() {
+            var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+            ws.onopen = function() {
+                reconnectDelay = 1000;
+            };
+
+            ws.onmessage = function(evt) {
+                try {
+                    var msg = JSON.parse(evt.data);
+                    handleSyncMessage(msg);
+                } catch (e) {
+                    // Ignore malformed messages
+                }
+            };
+
+            ws.onclose = function() {
+                ws = null;
+                setTimeout(function() {
+                    reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+                    connect();
+                }, reconnectDelay);
+            };
+
+            ws.onerror = function() {
+                if (ws) ws.close();
+            };
+        }
+
+        function handleSyncMessage(msg) {
+            var section = document.body.dataset.activeSection || 'dashboard';
+            var entity = msg.entity || '';
+
+            if (entity === 'calendar_event') {
+                if (section === 'calendar') {
+                    refreshSection('calendar');
+                } else if (section === 'dashboard') {
+                    refreshSection('dashboard');
+                }
+            } else if (entity === 'chore' || entity === 'chore_area') {
+                if (section === 'chores') {
+                    refreshSection('chores');
+                } else if (section === 'dashboard') {
+                    refreshSection('dashboard');
+                }
+            } else if (entity === 'grocery_item') {
+                if (section === 'grocery') {
+                    refreshSection('grocery');
+                } else if (section === 'dashboard') {
+                    refreshSection('dashboard');
+                }
+            } else if (entity === 'family_member') {
+                // Refresh current section to pick up member changes
+                refreshSection(section);
+            }
+        }
+
+        function refreshSection(section) {
+            var url = '/partials/' + section;
+            htmx.ajax('GET', url, {target: '#main-content', swap: 'innerHTML'});
+        }
+
+        connect();
+    })();
     </script>
 </body>
 </html>

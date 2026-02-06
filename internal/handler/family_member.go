@@ -10,6 +10,7 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/websocket"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -17,10 +18,17 @@ var hexColorRegexp = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type FamilyMemberHandler struct {
 	store *store.FamilyMemberStore
+	hub   *websocket.Hub
 }
 
-func NewFamilyMemberHandler(s *store.FamilyMemberStore) *FamilyMemberHandler {
-	return &FamilyMemberHandler{store: s}
+func NewFamilyMemberHandler(s *store.FamilyMemberStore, hub *websocket.Hub) *FamilyMemberHandler {
+	return &FamilyMemberHandler{store: s, hub: hub}
+}
+
+func (h *FamilyMemberHandler) broadcast(msg websocket.Message) {
+	if h.hub != nil {
+		h.hub.Broadcast(msg)
+	}
 }
 
 func (h *FamilyMemberHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +88,8 @@ func (h *FamilyMemberHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create family member"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("family_member", "created", member.ID, nil))
 
 	writeJSON(w, http.StatusCreated, member)
 }
@@ -145,6 +155,8 @@ func (h *FamilyMemberHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("family_member", "updated", id, nil))
+
 	writeJSON(w, http.StatusOK, member)
 }
 
@@ -169,6 +181,8 @@ func (h *FamilyMemberHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete family member"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("family_member", "deleted", id, nil))
 
 	w.WriteHeader(http.StatusNoContent)
 }

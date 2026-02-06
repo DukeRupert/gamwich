@@ -9,15 +9,23 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/websocket"
 )
 
 type ChoreHandler struct {
 	choreStore  *store.ChoreStore
 	memberStore *store.FamilyMemberStore
+	hub         *websocket.Hub
 }
 
-func NewChoreHandler(cs *store.ChoreStore, ms *store.FamilyMemberStore) *ChoreHandler {
-	return &ChoreHandler{choreStore: cs, memberStore: ms}
+func NewChoreHandler(cs *store.ChoreStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *ChoreHandler {
+	return &ChoreHandler{choreStore: cs, memberStore: ms, hub: hub}
+}
+
+func (h *ChoreHandler) broadcast(msg websocket.Message) {
+	if h.hub != nil {
+		h.hub.Broadcast(msg)
+	}
 }
 
 type choreRequest struct {
@@ -60,6 +68,8 @@ func (h *ChoreHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create chore"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore", "created", chore.ID, nil))
 
 	writeJSON(w, http.StatusCreated, chore)
 }
@@ -111,6 +121,8 @@ func (h *ChoreHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("chore", "updated", id, nil))
+
 	writeJSON(w, http.StatusOK, chore)
 }
 
@@ -135,6 +147,8 @@ func (h *ChoreHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete chore"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("chore", "deleted", id, nil))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -168,6 +182,8 @@ func (h *ChoreHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("chore", "completed", id, nil))
+
 	writeJSON(w, http.StatusCreated, completion)
 }
 
@@ -183,6 +199,9 @@ func (h *ChoreHandler) UndoComplete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to undo completion"})
 		return
 	}
+
+	choreID, _ := parseIDParam(r)
+	h.broadcast(websocket.NewMessage("chore", "completion_undone", choreID, nil))
 
 	w.WriteHeader(http.StatusNoContent)
 }

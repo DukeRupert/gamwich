@@ -45,11 +45,11 @@ func main() {
 	srv := server.New(db, weatherSvc)
 
 	httpServer := &http.Server{
-		Addr:         ":" + port,
-		Handler:      srv.Router(),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              ":" + port,
+		Handler:           srv.Router(),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout — WebSocket connections are long-lived
 	}
 
 	go func() {

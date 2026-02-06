@@ -10,15 +10,23 @@ import (
 	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/store"
+	"github.com/dukerupert/gamwich/internal/websocket"
 )
 
 type GroceryHandler struct {
 	groceryStore *store.GroceryStore
 	memberStore  *store.FamilyMemberStore
+	hub          *websocket.Hub
 }
 
-func NewGroceryHandler(gs *store.GroceryStore, ms *store.FamilyMemberStore) *GroceryHandler {
-	return &GroceryHandler{groceryStore: gs, memberStore: ms}
+func NewGroceryHandler(gs *store.GroceryStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *GroceryHandler {
+	return &GroceryHandler{groceryStore: gs, memberStore: ms, hub: hub}
+}
+
+func (h *GroceryHandler) broadcast(msg websocket.Message) {
+	if h.hub != nil {
+		h.hub.Broadcast(msg)
+	}
 }
 
 type groceryItemRequest struct {
@@ -60,6 +68,8 @@ func (h *GroceryHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create item"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "created", item.ID, map[string]any{"list_id": listID}))
 
 	writeJSON(w, http.StatusCreated, item)
 }
@@ -121,6 +131,8 @@ func (h *GroceryHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("grocery_item", "updated", id, nil))
+
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -145,6 +157,8 @@ func (h *GroceryHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete item"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "deleted", id, nil))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -172,6 +186,8 @@ func (h *GroceryHandler) ToggleChecked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.broadcast(websocket.NewMessage("grocery_item", "checked", id, nil))
+
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -187,6 +203,8 @@ func (h *GroceryHandler) ClearChecked(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to clear checked"})
 		return
 	}
+
+	h.broadcast(websocket.NewMessage("grocery_item", "cleared", 0, map[string]any{"list_id": listID}))
 
 	writeJSON(w, http.StatusOK, map[string]int64{"cleared": count})
 }

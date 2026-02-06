@@ -7,10 +7,12 @@ import (
 	"github.com/dukerupert/gamwich/internal/handler"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
+	ws "github.com/dukerupert/gamwich/internal/websocket"
 )
 
 type Server struct {
 	db              *sql.DB
+	hub             *ws.Hub
 	familyMemberH   *handler.FamilyMemberHandler
 	calendarEventH  *handler.CalendarEventHandler
 	choreH          *handler.ChoreHandler
@@ -19,6 +21,8 @@ type Server struct {
 }
 
 func New(db *sql.DB, weatherSvc *weather.Service) *Server {
+	hub := ws.NewHub()
+
 	familyMemberStore := store.NewFamilyMemberStore(db)
 	eventStore := store.NewEventStore(db)
 	choreStore := store.NewChoreStore(db)
@@ -26,11 +30,12 @@ func New(db *sql.DB, weatherSvc *weather.Service) *Server {
 
 	return &Server{
 		db:              db,
-		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore),
-		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore),
-		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore),
-		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, weatherSvc),
+		hub:             hub,
+		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore, hub),
+		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub),
+		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub),
+		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, weatherSvc, hub),
 	}
 }
 
@@ -144,6 +149,9 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /partials/family-members/{id}/pin/gate", s.templateHandler.PINGate)
 	mux.HandleFunc("POST /partials/family-members/{id}/pin/verify", s.templateHandler.PINVerifyThenAct)
 	mux.HandleFunc("POST /partials/family-members/{id}/pin", s.templateHandler.PINSetup)
+
+	// WebSocket
+	mux.HandleFunc("GET /ws", ws.HandleWebSocket(s.hub))
 
 	// Static files
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
