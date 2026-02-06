@@ -255,7 +255,7 @@ The goal of Phase 1 is a working app that a family can actually use on a kitchen
 
 ---
 
-### Milestone 1.6: Grocery Lists
+### Milestone 1.6: Grocery Lists ✅
 
 **Goal:** Shared grocery list that can be managed from the kitchen screen and checked off at the store.
 
