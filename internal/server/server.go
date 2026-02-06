@@ -52,7 +52,7 @@ func (s *Server) Router() http.Handler {
 
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
-	mux.HandleFunc("GET /calendar", s.templateHandler.SectionPage("calendar"))
+	mux.HandleFunc("GET /calendar", s.templateHandler.CalendarPage)
 	mux.HandleFunc("GET /chores", s.templateHandler.SectionPage("chores"))
 	mux.HandleFunc("GET /grocery", s.templateHandler.SectionPage("grocery"))
 	mux.HandleFunc("GET /settings", s.templateHandler.SectionPage("settings"))
@@ -64,6 +64,11 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /partials/chores", s.templateHandler.ChoresPartial)
 	mux.HandleFunc("GET /partials/grocery", s.templateHandler.GroceryPartial)
 	mux.HandleFunc("GET /partials/settings", s.templateHandler.SettingsPartial)
+
+	// Calendar view partials
+	mux.HandleFunc("GET /partials/calendar/day", s.templateHandler.CalendarDayPartial)
+	mux.HandleFunc("GET /partials/calendar/week", s.templateHandler.CalendarWeekPartial)
+	mux.HandleFunc("GET /partials/calendar/events/{id}", s.templateHandler.CalendarEventDetail)
 
 	// Weather partial (HTMX polling)
 	mux.HandleFunc("GET /partials/weather", s.templateHandler.WeatherPartial)

@@ -1,0 +1,254 @@
+{{define "calendar-content"}}
+<div class="max-w-5xl mx-auto" x-data="{ view: '{{.View}}' }">
+    <!-- View Toggle Tabs -->
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-3xl font-bold">Calendar</h1>
+        <div class="tabs tabs-boxed tabs-lg">
+            <button class="tab"
+                    :class="view === 'day' ? 'tab-active' : ''"
+                    hx-get="/partials/calendar/day?date={{.DateStr}}"
+                    hx-target="#calendar-view-content"
+                    @click="view = 'day'">Day</button>
+            <button class="tab"
+                    :class="view === 'week' ? 'tab-active' : ''"
+                    hx-get="/partials/calendar/week?date={{.DateStr}}"
+                    hx-target="#calendar-view-content"
+                    @click="view = 'week'">Week</button>
+        </div>
+    </div>
+
+    <!-- Calendar View Content -->
+    <div id="calendar-view-content">
+        {{if eq .View "week"}}
+            {{.ViewContent}}
+        {{else}}
+            {{.ViewContent}}
+        {{end}}
+    </div>
+</div>
+
+<!-- Event Modal -->
+<dialog id="event-modal" class="modal">
+    <div id="event-modal-body" class="modal-box max-w-lg">
+        <!-- Event form/detail loaded here via HTMX -->
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+{{end}}
+
+{{define "calendar-day-view"}}
+<div>
+    <!-- Date Header with Navigation -->
+    <div class="flex items-center justify-between mb-4">
+        <button class="btn btn-ghost btn-lg"
+                hx-get="/partials/calendar/day?date={{.PrevDate}}"
+                hx-target="#calendar-view-content">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="text-center">
+            <div class="text-2xl font-bold">{{.DateLabel}}</div>
+            {{if .IsToday}}<div class="badge badge-primary badge-sm mt-1">Today</div>{{end}}
+        </div>
+        <button class="btn btn-ghost btn-lg"
+                hx-get="/partials/calendar/day?date={{.NextDate}}"
+                hx-target="#calendar-view-content">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- All-Day Events -->
+    {{if .AllDayEvents}}
+    <div class="mb-4 space-y-1">
+        {{range .AllDayEvents}}
+        <div class="rounded-lg px-3 py-2 text-sm font-medium text-white cursor-pointer"
+             style="background-color: {{.Color}}"
+             hx-get="/partials/calendar/events/{{.ID}}"
+             hx-target="#event-modal-body"
+             hx-swap="innerHTML"
+             onclick="document.getElementById('event-modal').showModal()">
+            {{.Title}}
+            {{if .MemberEmoji}}<span class="ml-1">{{.MemberEmoji}}</span>{{end}}
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+
+    <!-- Day Timeline Grid -->
+    <div class="card bg-base-100 shadow-md overflow-hidden">
+        <div class="relative" style="height: 1020px;"> <!-- 17 hours * 60px -->
+            <!-- Hour Lines & Labels -->
+            {{range .Hours}}
+            <div class="absolute w-full border-t border-base-300 flex"
+                 style="top: {{.TopPx}}px; height: 60px;">
+                <div class="w-16 text-xs text-base-content/40 pr-2 text-right pt-0.5 flex-shrink-0">{{.Label}}</div>
+                <div class="flex-1 relative cursor-pointer hover:bg-base-200/50 transition-colors"
+                     hx-get="/partials/calendar/events/new?date={{$.DateStr}}&hour={{.Hour}}"
+                     hx-target="#event-modal-body"
+                     hx-swap="innerHTML"
+                     onclick="document.getElementById('event-modal').showModal()">
+                </div>
+            </div>
+            {{end}}
+
+            <!-- Events -->
+            {{range .TimedEvents}}
+            <div class="absolute rounded-lg px-2 py-1 text-sm text-white overflow-hidden cursor-pointer hover:brightness-110 transition-all"
+                 style="top: {{.TopPx}}px; height: {{.HeightPx}}px; left: 68px; right: 8px; background-color: {{.Color}}; min-height: 24px;"
+                 hx-get="/partials/calendar/events/{{.ID}}"
+                 hx-target="#event-modal-body"
+                 hx-swap="innerHTML"
+                 onclick="document.getElementById('event-modal').showModal()">
+                <div class="font-medium truncate">{{.Title}}</div>
+                {{if ge .HeightPx 40}}
+                <div class="text-xs opacity-80">{{.TimeRange}}</div>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Floating Add Button -->
+    <div class="fixed bottom-24 right-6 z-10">
+        <button class="btn btn-primary btn-circle btn-lg shadow-lg"
+                hx-get="/partials/calendar/events/new?date={{.DateStr}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML"
+                onclick="document.getElementById('event-modal').showModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+        </button>
+    </div>
+</div>
+{{end}}
+
+{{define "calendar-week-view"}}
+<div>
+    <!-- Week Header with Navigation -->
+    <div class="flex items-center justify-between mb-4">
+        <button class="btn btn-ghost btn-lg"
+                hx-get="/partials/calendar/week?date={{.PrevWeek}}"
+                hx-target="#calendar-view-content">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="text-xl font-bold">{{.WeekLabel}}</div>
+        <button class="btn btn-ghost btn-lg"
+                hx-get="/partials/calendar/week?date={{.NextWeek}}"
+                hx-target="#calendar-view-content">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Week Grid -->
+    <div class="grid grid-cols-7 gap-2">
+        {{range .Days}}
+        <div class="card bg-base-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow min-h-[140px] {{if .IsToday}}ring-2 ring-primary{{end}}"
+             hx-get="/partials/calendar/day?date={{.DateStr}}"
+             hx-target="#calendar-view-content">
+            <div class="card-body p-3">
+                <div class="text-xs text-base-content/50 uppercase">{{.DayName}}</div>
+                <div class="text-lg font-bold {{if .IsToday}}text-primary{{end}}">{{.DayNum}}</div>
+                <div class="space-y-1 mt-1">
+                    {{range .Events}}
+                    <div class="rounded px-1.5 py-0.5 text-xs text-white truncate"
+                         style="background-color: {{.Color}}">
+                        {{.Title}}
+                    </div>
+                    {{end}}
+                    {{if .MoreCount}}
+                    <div class="text-xs text-base-content/40">+{{.MoreCount}} more</div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Floating Add Button -->
+    <div class="fixed bottom-24 right-6 z-10">
+        <button class="btn btn-primary btn-circle btn-lg shadow-lg"
+                hx-get="/partials/calendar/events/new?date={{.TodayStr}}"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML"
+                onclick="document.getElementById('event-modal').showModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+        </button>
+    </div>
+</div>
+{{end}}
+
+{{define "calendar-event-detail"}}
+<div>
+    <h3 class="text-xl font-bold mb-4">{{.Title}}</h3>
+
+    <div class="space-y-3">
+        <!-- Time -->
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+                {{if .AllDay}}
+                <div class="font-medium">All Day</div>
+                <div class="text-sm text-base-content/60">{{.DateRange}}</div>
+                {{else}}
+                <div class="font-medium">{{.TimeRange}}</div>
+                <div class="text-sm text-base-content/60">{{.DateLabel}}</div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Location -->
+        {{if .Location}}
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <div class="font-medium">{{.Location}}</div>
+        </div>
+        {{end}}
+
+        <!-- Family Member -->
+        {{if .MemberName}}
+        <div class="flex items-center gap-3">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                 style="background-color: {{.MemberColor}}20; border: 2px solid {{.MemberColor}}">
+                {{.MemberEmoji}}
+            </div>
+            <div class="font-medium">{{.MemberName}}</div>
+        </div>
+        {{end}}
+
+        <!-- Description -->
+        {{if .Description}}
+        <div class="mt-2 p-3 bg-base-200 rounded-lg text-sm">{{.Description}}</div>
+        {{end}}
+    </div>
+
+    <!-- Actions -->
+    <div class="flex justify-end gap-2 mt-6">
+        <button class="btn btn-error btn-outline"
+                hx-delete="/partials/calendar/events/{{.ID}}"
+                hx-target="#calendar-view-content"
+                hx-confirm="Delete this event?"
+                onclick="document.getElementById('event-modal').close()">Delete</button>
+        <button class="btn btn-primary"
+                hx-get="/partials/calendar/events/{{.ID}}/edit"
+                hx-target="#event-modal-body"
+                hx-swap="innerHTML">Edit</button>
+    </div>
+</div>
+{{end}}
