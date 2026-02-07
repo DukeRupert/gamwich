@@ -1,17 +1,6 @@
-var CACHE_NAME = 'gamwich-v1';
-var CDN_ASSETS = [
-    'https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css',
-    'https://cdn.tailwindcss.com',
-    'https://unpkg.com/htmx.org@2.0.4',
-    'https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js'
-];
+var CACHE_NAME = 'gamwich-v2';
 
 self.addEventListener('install', function(event) {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then(function(cache) {
-            return cache.addAll(CDN_ASSETS);
-        })
-    );
     self.skipWaiting();
 });
 
@@ -78,12 +67,17 @@ self.addEventListener('notificationclick', function(event) {
 self.addEventListener('fetch', function(event) {
     if (event.request.method !== 'GET') return;
 
-    // Skip WebSocket upgrade requests
-    if (event.request.headers.get('Upgrade') === 'websocket') return;
+    var url = new URL(event.request.url);
+
+    // Only cache static assets and CDN resources
+    var isStatic = url.origin === location.origin && url.pathname.startsWith('/static/');
+    var isCDN = url.origin !== location.origin;
+
+    if (!isStatic && !isCDN) return;
 
     event.respondWith(
         fetch(event.request).then(function(response) {
-            if (response.ok) {
+            if (response.ok || response.type === 'opaque') {
                 var clone = response.clone();
                 caches.open(CACHE_NAME).then(function(cache) {
                     cache.put(event.request, clone);
