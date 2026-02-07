@@ -106,9 +106,9 @@ func TestSettingsGetAll(t *testing.T) {
 		t.Fatalf("get all: %v", err)
 	}
 
-	// Should have at least the 22 seed settings (5 kiosk + 3 weather + 4 theme + 3 email + 5 s3 + 2 vapid)
-	if len(all) < 22 {
-		t.Fatalf("expected at least 22 settings, got %d", len(all))
+	// Should have at least the 19 seed settings (5 kiosk + 3 weather + 4 theme + 5 s3 + 2 vapid)
+	if len(all) < 19 {
+		t.Fatalf("expected at least 19 settings, got %d", len(all))
 	}
 
 	if all["idle_timeout_minutes"] != "5" {
@@ -232,52 +232,6 @@ func TestSettingsGetThemeSettings(t *testing.T) {
 
 	if _, ok := theme["non_theme_key"]; ok {
 		t.Error("non-theme key should not be in theme settings")
-	}
-}
-
-func TestSettingsEmailSeedData(t *testing.T) {
-	ss := setupSettingsTestDB(t)
-
-	settings, err := ss.GetEmailSettings()
-	if err != nil {
-		t.Fatalf("get email settings: %v", err)
-	}
-
-	for _, key := range []string{"email_postmark_token", "email_from_address", "email_base_url"} {
-		got, ok := settings[key]
-		if !ok {
-			t.Errorf("missing email setting %q", key)
-			continue
-		}
-		if got != "" {
-			t.Errorf("setting %q = %q, want empty string", key, got)
-		}
-	}
-}
-
-func TestSettingsGetEmailSettings(t *testing.T) {
-	ss := setupSettingsTestDB(t)
-
-	if err := ss.Set("email_postmark_token", "test-token"); err != nil {
-		t.Fatalf("set: %v", err)
-	}
-	if err := ss.Set("email_from_address", "test@example.com"); err != nil {
-		t.Fatalf("set: %v", err)
-	}
-
-	settings, err := ss.GetEmailSettings()
-	if err != nil {
-		t.Fatalf("get email: %v", err)
-	}
-
-	if settings["email_postmark_token"] != "test-token" {
-		t.Errorf("email_postmark_token = %q, want %q", settings["email_postmark_token"], "test-token")
-	}
-	if settings["email_from_address"] != "test@example.com" {
-		t.Errorf("email_from_address = %q, want %q", settings["email_from_address"], "test@example.com")
-	}
-	if len(settings) != 3 {
-		t.Errorf("expected 3 email settings, got %d", len(settings))
 	}
 }
 

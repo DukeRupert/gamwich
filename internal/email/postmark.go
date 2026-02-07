@@ -37,15 +37,6 @@ func NewClient(serverToken, fromEmail, baseURL string, opts ...Option) *Client {
 	return c
 }
 
-// UpdateConfig hot-reloads the email client configuration.
-func (c *Client) UpdateConfig(serverToken, fromEmail, baseURL string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.serverToken = serverToken
-	c.fromEmail = fromEmail
-	c.baseURL = baseURL
-}
-
 // Configured returns true if the server token is set.
 func (c *Client) Configured() bool {
 	c.mu.RLock()

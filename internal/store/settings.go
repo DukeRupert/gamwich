@@ -40,12 +40,6 @@ var backupKeys = []string{
 	"backup_passphrase_hash",
 }
 
-var emailKeys = []string{
-	"email_postmark_token",
-	"email_from_address",
-	"email_base_url",
-}
-
 var s3Keys = []string{
 	"backup_s3_endpoint",
 	"backup_s3_bucket",
@@ -183,22 +177,6 @@ func (s *SettingsStore) GetBackupSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get backup setting %q: %w", key, err)
-		}
-		settings[key] = value
-	}
-	return settings, nil
-}
-
-func (s *SettingsStore) GetEmailSettings() (map[string]string, error) {
-	settings := make(map[string]string)
-	for _, key := range emailKeys {
-		var value string
-		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
-		if err == sql.ErrNoRows {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("get email setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/auth"
 	"github.com/dukerupert/gamwich/internal/backup"
 	"github.com/dukerupert/gamwich/internal/chore"
-	"github.com/dukerupert/gamwich/internal/email"
+
 	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/model"
@@ -47,11 +47,10 @@ type TemplateHandler struct {
 	pushStore      *store.PushStore
 	pushService    *push.Service
 	pushScheduler  *push.Scheduler
-	emailClient    *email.Client
 	templates      *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler, ec *email.Client) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add":         func(a, b int) int { return a + b },
 		"formatBytes": formatBytes,
@@ -81,7 +80,6 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		pushStore:     ps,
 		pushService:   pushSvc,
 		pushScheduler: pushSched,
-		emailClient:   ec,
 		templates:     tmpl,
 	}
 }
@@ -3630,44 +3628,6 @@ func (h *TemplateHandler) LicenseKeyUpdate(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("HX-Trigger", `{"showToast": "License key updated"}`)
 	h.renderPartial(w, "license-settings-form", data)
-}
-
-// EmailSettingsPartial renders the email settings card content.
-func (h *TemplateHandler) EmailSettingsPartial(w http.ResponseWriter, r *http.Request) {
-	emailSettings, _ := h.settingsStore.GetEmailSettings()
-	configured := emailSettings["email_postmark_token"] != "" && emailSettings["email_from_address"] != ""
-	data := map[string]any{
-		"PostmarkToken": emailSettings["email_postmark_token"],
-		"FromAddress":   emailSettings["email_from_address"],
-		"BaseURL":       emailSettings["email_base_url"],
-		"Configured":    configured,
-	}
-	h.renderPartial(w, "email-settings-form", data)
-}
-
-// EmailSettingsUpdate handles saving email settings.
-func (h *TemplateHandler) EmailSettingsUpdate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.renderToast(w, "error", "Invalid form data")
-		return
-	}
-
-	token := strings.TrimSpace(r.FormValue("email_postmark_token"))
-	fromAddr := strings.TrimSpace(r.FormValue("email_from_address"))
-	baseURL := strings.TrimSpace(r.FormValue("email_base_url"))
-
-	h.settingsStore.Set("email_postmark_token", token)
-	h.settingsStore.Set("email_from_address", fromAddr)
-	h.settingsStore.Set("email_base_url", baseURL)
-
-	if h.emailClient != nil {
-		h.emailClient.UpdateConfig(token, fromAddr, baseURL)
-	}
-
-	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
-
-	w.Header().Set("HX-Trigger", `{"showToast": "Email settings updated"}`)
-	h.EmailSettingsPartial(w, r)
 }
 
 // S3SettingsPartial renders the S3 storage settings card content.

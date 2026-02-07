@@ -106,42 +106,6 @@ func TestConfigured(t *testing.T) {
 	}
 }
 
-func TestUpdateConfig(t *testing.T) {
-	client := NewClient("", "", "")
-	if client.Configured() {
-		t.Error("expected Configured() = false initially")
-	}
-
-	client.UpdateConfig("new-token", "new@example.com", "https://new.example.com")
-	if !client.Configured() {
-		t.Error("expected Configured() = true after UpdateConfig")
-	}
-
-	// Verify updated fields are used
-	var gotToken string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.Header.Get("X-Postmark-Server-Token")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"MessageID": "test-id"}`))
-	}))
-	defer server.Close()
-
-	client.httpClient = &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}
-	err := client.SendMagicLink("alice@example.com", "tok123", "login", "")
-	if err != nil {
-		t.Fatalf("send after update: %v", err)
-	}
-	if gotToken != "new-token" {
-		t.Errorf("server token = %q, want %q", gotToken, "new-token")
-	}
-
-	// Clear config
-	client.UpdateConfig("", "", "")
-	if client.Configured() {
-		t.Error("expected Configured() = false after clearing")
-	}
-}
-
 // rewriteTransport redirects all requests to a test server URL.
 type rewriteTransport struct {
 	base   http.RoundTripper

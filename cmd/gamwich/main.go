@@ -60,23 +60,12 @@ func main() {
 	}
 	weatherSvc := weather.NewService(weatherCfg)
 
-	// Email config: DB values take priority, env vars as fallback
+	// Email config: app-level settings from env vars only
 	postmarkToken := os.Getenv("GAMWICH_POSTMARK_TOKEN")
 	fromEmail := os.Getenv("GAMWICH_FROM_EMAIL")
 	baseURL := os.Getenv("GAMWICH_BASE_URL")
 	if baseURL == "" {
 		baseURL = fmt.Sprintf("http://localhost:%s", port)
-	}
-	if dbEmail, err := settingsStore.GetEmailSettings(); err == nil {
-		if v := dbEmail["email_postmark_token"]; v != "" {
-			postmarkToken = v
-		}
-		if v := dbEmail["email_from_address"]; v != "" {
-			fromEmail = v
-		}
-		if v := dbEmail["email_base_url"]; v != "" {
-			baseURL = v
-		}
 	}
 	emailClient := email.NewClient(postmarkToken, fromEmail, baseURL)
 
