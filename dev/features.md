@@ -158,10 +158,10 @@ Replaces the sticky notes and scribbled reminders on the fridge.
 
 ### Authentication & Multi-Tenancy
 - **PIN per family member** — for "who's adding this?" attribution on the kitchen screen
-- **Auth accounts separate from family members** — parents/adults have login accounts (email-based, passwordless magic links), kids remain lightweight profiles
+- **Auth accounts separate from family members** — parents/adults have login accounts (email-based, passwordless one-time codes), kids remain lightweight profiles
 - **Multi-tenant support** — multiple households on a single instance with isolated data (required for hosted tier, useful for self-hosted families sharing an instance)
 - **LAN kiosk mode** — authenticated session on the kitchen screen, no repeated logins for household members walking past
-- **Remote access** — magic link login for secure access over the internet (cloud tier provides the tunnel, auth is built into the core app)
+- **Remote access** — one-time code login for secure access over the internet (cloud tier provides the tunnel, auth is built into the core app)
 - See `dev/auth-plan.md` for detailed implementation plan
 
 ---
@@ -220,7 +220,7 @@ meals (Phase 2)
 - Idle/screensaver mode
 
 ### Phase 3: Authentication & Multi-Tenancy
-- Passwordless auth (magic link emails)
+- Passwordless auth (one-time code emails)
 - Multi-household data isolation
 - Household-scoped WebSocket broadcasts
 - Session management and admin roles

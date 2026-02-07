@@ -373,7 +373,7 @@ The Cloud tier monetizes the natural desire for remote access and data safety. T
 
 **Goal:** Stripe integration for subscription management and a license key mechanism to activate paid features on self-hosted instances.
 
-**Status:** Complete — standalone billing service (`cmd/billing/`) with Stripe checkout/webhooks, magic link auth, license key generation (`GW-XXXX-XXXX-XXXX-XXXX`), and account management. Gamwich app (`cmd/gamwich/`) gains a license client with background validation, caching, and 7-day offline grace period. 38 tests across billing stores and license client.
+**Status:** Complete — standalone billing service (`cmd/billing/`) with Stripe checkout/webhooks, one-time code auth, license key generation (`GW-XXXX-XXXX-XXXX-XXXX`), and account management. Gamwich app (`cmd/gamwich/`) gains a license client with background validation, caching, and 7-day offline grace period. 38 tests across billing stores and license client.
 
 #### Tasks
 

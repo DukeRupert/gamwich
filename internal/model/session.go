@@ -19,5 +19,6 @@ type MagicLink struct {
 	HouseholdID *int64     `json:"household_id"`
 	ExpiresAt   time.Time  `json:"expires_at"`
 	UsedAt      *time.Time `json:"used_at"`
+	Attempts    int        `json:"attempts"`
 	CreatedAt   time.Time  `json:"created_at"`
 }

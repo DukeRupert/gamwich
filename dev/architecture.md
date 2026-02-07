@@ -39,7 +39,7 @@ All modals follow the same pattern — HX-Trigger header + JS listener to close 
 **App-level (env vars only, no DB/UI):**
 - `GAMWICH_POSTMARK_TOKEN` — Postmark server token
 - `GAMWICH_FROM_EMAIL` — Sender email address
-- `GAMWICH_BASE_URL` — Base URL for magic link emails
+- `GAMWICH_BASE_URL` — Base URL for auth code emails
 - `GAMWICH_DB_PATH`, `GAMWICH_PORT` — Core infrastructure
 - `GAMWICH_LICENSE_KEY`, `GAMWICH_LICENSE_URL` — License/billing
 

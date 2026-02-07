@@ -29,8 +29,14 @@ func TestMagicLinkCreate(t *testing.T) {
 	if ml.Token == "" {
 		t.Error("expected non-empty token")
 	}
-	if len(ml.Token) != 64 {
-		t.Errorf("token length = %d, want 64", len(ml.Token))
+	if len(ml.Token) != 6 {
+		t.Errorf("token length = %d, want 6", len(ml.Token))
+	}
+	// Verify it's all digits
+	for _, c := range ml.Token {
+		if c < '0' || c > '9' {
+			t.Errorf("token contains non-digit: %c", c)
+		}
 	}
 	if ml.Email != "alice@example.com" {
 		t.Errorf("email = %q, want %q", ml.Email, "alice@example.com")
@@ -40,6 +46,9 @@ func TestMagicLinkCreate(t *testing.T) {
 	}
 	if ml.HouseholdID != nil {
 		t.Errorf("household_id = %v, want nil", ml.HouseholdID)
+	}
+	if ml.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0", ml.Attempts)
 	}
 }
 
@@ -56,14 +65,47 @@ func TestMagicLinkCreateWithHousehold(t *testing.T) {
 	}
 }
 
-func TestMagicLinkGetByToken(t *testing.T) {
+func TestMagicLinkCreateInvalidatesPrevious(t *testing.T) {
+	ms := setupMagicLinkTestDB(t)
+
+	first, err := ms.Create("alice@example.com", "login", nil)
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+
+	// Create a second code for the same email
+	second, err := ms.Create("alice@example.com", "login", nil)
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+
+	// First code should be invalidated (used)
+	ml, err := ms.GetByEmailAndCode("alice@example.com", first.Token)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	if ml != nil {
+		t.Error("expected first code to be invalidated")
+	}
+
+	// Second code should still be valid
+	ml, err = ms.GetByEmailAndCode("alice@example.com", second.Token)
+	if err != nil {
+		t.Fatalf("get second: %v", err)
+	}
+	if ml == nil {
+		t.Fatal("expected second code to be valid")
+	}
+}
+
+func TestMagicLinkGetByEmailAndCode(t *testing.T) {
 	ms := setupMagicLinkTestDB(t)
 
 	created, _ := ms.Create("alice@example.com", "login", nil)
 
-	ml, err := ms.GetByToken(created.Token)
+	ml, err := ms.GetByEmailAndCode("alice@example.com", created.Token)
 	if err != nil {
-		t.Fatalf("get by token: %v", err)
+		t.Fatalf("get by email and code: %v", err)
 	}
 	if ml == nil {
 		t.Fatal("expected magic link, got nil")
@@ -73,15 +115,81 @@ func TestMagicLinkGetByToken(t *testing.T) {
 	}
 }
 
-func TestMagicLinkGetByTokenNotFound(t *testing.T) {
+func TestMagicLinkGetByEmailAndCodeNotFound(t *testing.T) {
 	ms := setupMagicLinkTestDB(t)
 
-	ml, err := ms.GetByToken("nonexistent")
+	ml, err := ms.GetByEmailAndCode("alice@example.com", "000000")
 	if err != nil {
-		t.Fatalf("get by token: %v", err)
+		t.Fatalf("get by email and code: %v", err)
 	}
 	if ml != nil {
-		t.Error("expected nil for nonexistent token")
+		t.Error("expected nil for nonexistent code")
+	}
+}
+
+func TestMagicLinkGetByEmailAndCodeWrongEmail(t *testing.T) {
+	ms := setupMagicLinkTestDB(t)
+
+	created, _ := ms.Create("alice@example.com", "login", nil)
+
+	// Correct code but wrong email
+	ml, err := ms.GetByEmailAndCode("bob@example.com", created.Token)
+	if err != nil {
+		t.Fatalf("get by email and code: %v", err)
+	}
+	if ml != nil {
+		t.Error("expected nil for wrong email")
+	}
+}
+
+func TestMagicLinkGetLatestByEmail(t *testing.T) {
+	ms := setupMagicLinkTestDB(t)
+
+	created, _ := ms.Create("alice@example.com", "login", nil)
+
+	ml, err := ms.GetLatestByEmail("alice@example.com")
+	if err != nil {
+		t.Fatalf("get latest: %v", err)
+	}
+	if ml == nil {
+		t.Fatal("expected magic link, got nil")
+	}
+	if ml.ID != created.ID {
+		t.Errorf("id = %d, want %d", ml.ID, created.ID)
+	}
+}
+
+func TestMagicLinkGetLatestByEmailNotFound(t *testing.T) {
+	ms := setupMagicLinkTestDB(t)
+
+	ml, err := ms.GetLatestByEmail("nobody@example.com")
+	if err != nil {
+		t.Fatalf("get latest: %v", err)
+	}
+	if ml != nil {
+		t.Error("expected nil for nonexistent email")
+	}
+}
+
+func TestMagicLinkIncrementAttempts(t *testing.T) {
+	ms := setupMagicLinkTestDB(t)
+
+	created, _ := ms.Create("alice@example.com", "login", nil)
+
+	attempts, err := ms.IncrementAttempts(created.ID)
+	if err != nil {
+		t.Fatalf("increment attempts: %v", err)
+	}
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1", attempts)
+	}
+
+	attempts, err = ms.IncrementAttempts(created.ID)
+	if err != nil {
+		t.Fatalf("increment attempts again: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2", attempts)
 	}
 }
 
@@ -95,7 +203,7 @@ func TestMagicLinkMarkUsed(t *testing.T) {
 	}
 
 	// Should not be returned after marking as used
-	ml, err := ms.GetByToken(created.Token)
+	ml, err := ms.GetByEmailAndCode("alice@example.com", created.Token)
 	if err != nil {
 		t.Fatalf("get after mark used: %v", err)
 	}

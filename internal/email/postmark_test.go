@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestSendMagicLinkLogin(t *testing.T) {
+func TestSendAuthCodeLogin(t *testing.T) {
 	var received postmarkEmail
 	var gotToken string
 
@@ -22,15 +23,12 @@ func TestSendMagicLinkLogin(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-token", "noreply@example.com", "https://gamwich.test", WithHTTPClient(server.Client()))
-	// Override the postmark URL by using the test server URL
-	// We need to adjust: the client currently hardcodes the API URL.
-	// For testing, we'll create a custom HTTP client that redirects to our test server.
 	transport := &rewriteTransport{base: http.DefaultTransport, target: server.URL}
 	client.httpClient = &http.Client{Transport: transport}
 
-	err := client.SendMagicLink("alice@example.com", "abc123", "login", "")
+	err := client.SendAuthCode("alice@example.com", "123456", "login", "")
 	if err != nil {
-		t.Fatalf("send magic link: %v", err)
+		t.Fatalf("send auth code: %v", err)
 	}
 
 	if gotToken != "test-token" {
@@ -45,9 +43,19 @@ func TestSendMagicLinkLogin(t *testing.T) {
 	if received.Subject != "Sign in to Gamwich" {
 		t.Errorf("Subject = %q, want %q", received.Subject, "Sign in to Gamwich")
 	}
+	// Verify the body contains the code, not a link
+	if !strings.Contains(received.TextBody, "123456") {
+		t.Errorf("TextBody should contain code, got: %s", received.TextBody)
+	}
+	if strings.Contains(received.TextBody, "http") {
+		t.Errorf("TextBody should not contain a link for login, got: %s", received.TextBody)
+	}
+	if !strings.Contains(received.HtmlBody, "123456") {
+		t.Errorf("HtmlBody should contain code, got: %s", received.HtmlBody)
+	}
 }
 
-func TestSendMagicLinkInvite(t *testing.T) {
+func TestSendAuthCodeInvite(t *testing.T) {
 	var received postmarkEmail
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,26 +68,39 @@ func TestSendMagicLinkInvite(t *testing.T) {
 	client := NewClient("test-token", "noreply@example.com", "https://gamwich.test")
 	client.httpClient = &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}
 
-	err := client.SendMagicLink("bob@example.com", "xyz789", "invite", "Smith Family")
+	err := client.SendAuthCode("bob@example.com", "654321", "invite", "Smith Family")
 	if err != nil {
-		t.Fatalf("send magic link: %v", err)
+		t.Fatalf("send auth code: %v", err)
 	}
 
 	if received.Subject != "You've been invited to Smith Family on Gamwich" {
 		t.Errorf("Subject = %q, want invite subject", received.Subject)
 	}
+	// Invite emails should contain both a navigation URL and the code
+	if !strings.Contains(received.TextBody, "654321") {
+		t.Errorf("TextBody should contain code, got: %s", received.TextBody)
+	}
+	if !strings.Contains(received.TextBody, "https://gamwich.test/invite/accept?email=bob%40example.com") {
+		t.Errorf("TextBody should contain navigation URL, got: %s", received.TextBody)
+	}
+	if !strings.Contains(received.HtmlBody, "654321") {
+		t.Errorf("HtmlBody should contain code, got: %s", received.HtmlBody)
+	}
+	if !strings.Contains(received.HtmlBody, "https://gamwich.test/invite/accept?email=bob%40example.com") {
+		t.Errorf("HtmlBody should contain navigation URL, got: %s", received.HtmlBody)
+	}
 }
 
-func TestSendMagicLinkNotConfigured(t *testing.T) {
+func TestSendAuthCodeNotConfigured(t *testing.T) {
 	client := NewClient("", "noreply@example.com", "https://gamwich.test")
 
-	err := client.SendMagicLink("alice@example.com", "abc123", "login", "")
+	err := client.SendAuthCode("alice@example.com", "123456", "login", "")
 	if err == nil {
 		t.Fatal("expected error for unconfigured client")
 	}
 }
 
-func TestSendMagicLinkAPIError(t *testing.T) {
+func TestSendAuthCodeAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 	}))
@@ -88,7 +109,7 @@ func TestSendMagicLinkAPIError(t *testing.T) {
 	client := NewClient("test-token", "noreply@example.com", "https://gamwich.test")
 	client.httpClient = &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}
 
-	err := client.SendMagicLink("alice@example.com", "abc123", "login", "")
+	err := client.SendAuthCode("alice@example.com", "123456", "login", "")
 	if err == nil {
 		t.Fatal("expected error for API failure")
 	}

@@ -81,8 +81,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Send magic link
 	if h.emailClient != nil && h.emailClient.Configured() {
-		if err := h.emailClient.SendMagicLink(addr, sess.Token, "login", "Gamwich"); err != nil {
-			h.logger.Error("send magic link", "error", err)
+		if err := h.emailClient.SendAuthCode(addr, sess.Token, "login", "Gamwich"); err != nil {
+			h.logger.Error("send auth code", "error", err)
 		}
 	} else {
 		h.logger.Info("magic link token generated", "email", addr, "token", sess.Token)

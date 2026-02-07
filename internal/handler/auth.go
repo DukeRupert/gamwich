@@ -10,10 +10,14 @@ import (
 
 	"github.com/dukerupert/gamwich/internal/auth"
 	"github.com/dukerupert/gamwich/internal/email"
+	"github.com/dukerupert/gamwich/internal/model"
 	"github.com/dukerupert/gamwich/internal/store"
 )
 
-const sessionCookieName = "gamwich_session"
+const (
+	sessionCookieName = "gamwich_session"
+	maxCodeAttempts   = 5
+)
 
 type AuthHandler struct {
 	userStore      *store.UserStore
@@ -61,8 +65,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Always show "check your email" to prevent user enumeration
 	defer func() {
-		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]string{
-			"Email": emailAddr,
+		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+			"Email":  emailAddr,
+			"Invite": false,
 		})
 	}()
 
@@ -84,12 +89,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	ml, err := h.magicLinkStore.Create(emailAddr, "login", nil)
 	if err != nil {
-		h.logger.Error("create magic link", "error", err)
+		h.logger.Error("create auth code", "error", err)
 		return
 	}
 
-	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "login", ""); err != nil {
-		h.logger.Error("send magic link", "error", err)
+	if err := h.emailClient.SendAuthCode(emailAddr, ml.Token, "login", ""); err != nil {
+		h.logger.Error("send auth code", "error", err)
 	}
 }
 
@@ -115,8 +120,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing != nil {
 		// Show check email page even if user exists (prevent enumeration)
-		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]string{
-			"Email": emailAddr,
+		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+			"Email":  emailAddr,
+			"Invite": false,
 		})
 		return
 	}
@@ -151,46 +157,81 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create magic link
+	// Create auth code
 	ml, err := h.magicLinkStore.Create(emailAddr, "register", &household.ID)
 	if err != nil {
-		h.logger.Error("create magic link", "error", err)
+		h.logger.Error("create auth code", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Send email
-	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "register", householdName); err != nil {
-		h.logger.Error("send magic link", "error", err)
+	if err := h.emailClient.SendAuthCode(emailAddr, ml.Token, "register", householdName); err != nil {
+		h.logger.Error("send auth code", "error", err)
 	}
 
-	h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]string{
-		"Email": emailAddr,
+	h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+		"Email":  emailAddr,
+		"Invite": false,
 	})
 }
 
-func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "Invalid link", http.StatusBadRequest)
-		return
+// validateCode checks the code for the given email, handling attempts and expiry.
+// Returns the magic link on success, or an error message string on failure.
+func (h *AuthHandler) validateCode(emailAddr, code string) (*model.MagicLink, string) {
+	if emailAddr == "" || code == "" {
+		return nil, "Email and code are required"
 	}
 
-	ml, err := h.magicLinkStore.GetByToken(token)
+	// Look up the latest valid code for this email (for attempt tracking)
+	latest, err := h.magicLinkStore.GetLatestByEmail(emailAddr)
 	if err != nil {
-		h.logger.Error("verify magic link", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
+		h.logger.Error("validate code lookup", "error", err)
+		return nil, "Internal error"
 	}
-	if ml == nil {
-		http.Error(w, "This link has expired or already been used", http.StatusBadRequest)
-		return
+	if latest == nil {
+		return nil, "Code has expired or already been used. Please request a new one."
 	}
 
-	// Mark the link as used
-	if err := h.magicLinkStore.MarkUsed(ml.ID); err != nil {
+	// Check max attempts
+	if latest.Attempts >= maxCodeAttempts {
+		h.magicLinkStore.MarkUsed(latest.ID)
+		return nil, "Too many incorrect attempts. Please request a new code."
+	}
+
+	// Check if code matches
+	if latest.Token != code {
+		newAttempts, err := h.magicLinkStore.IncrementAttempts(latest.ID)
+		if err != nil {
+			h.logger.Error("increment attempts", "error", err)
+		}
+		if newAttempts >= maxCodeAttempts {
+			h.magicLinkStore.MarkUsed(latest.ID)
+			return nil, "Too many incorrect attempts. Please request a new code."
+		}
+		return nil, "Incorrect code. Please try again."
+	}
+
+	// Code matches — mark as used
+	if err := h.magicLinkStore.MarkUsed(latest.ID); err != nil {
 		h.logger.Error("mark used", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return nil, "Internal error"
+	}
+
+	return latest, ""
+}
+
+func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	emailAddr := strings.TrimSpace(r.FormValue("email"))
+	code := strings.TrimSpace(r.FormValue("code"))
+
+	ml, errMsg := h.validateCode(emailAddr, code)
+	if errMsg != "" {
+		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+			"Email":  emailAddr,
+			"Invite": false,
+			"Error":  errMsg,
+		})
 		return
 	}
 
@@ -243,28 +284,34 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *AuthHandler) InviteAcceptPage(w http.ResponseWriter, r *http.Request) {
+	emailAddr := r.URL.Query().Get("email")
+	h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+		"Email":  emailAddr,
+		"Invite": true,
+	})
+}
+
 func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "Invalid link", http.StatusBadRequest)
+	emailAddr := strings.TrimSpace(r.FormValue("email"))
+	code := strings.TrimSpace(r.FormValue("code"))
+
+	ml, errMsg := h.validateCode(emailAddr, code)
+	if errMsg != "" {
+		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+			"Email":  emailAddr,
+			"Invite": true,
+			"Error":  errMsg,
+		})
 		return
 	}
 
-	ml, err := h.magicLinkStore.GetByToken(token)
-	if err != nil {
-		h.logger.Error("invite accept", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-	if ml == nil || ml.Purpose != "invite" || ml.HouseholdID == nil {
-		http.Error(w, "This invitation link has expired or already been used", http.StatusBadRequest)
-		return
-	}
-
-	// Mark as used
-	if err := h.magicLinkStore.MarkUsed(ml.ID); err != nil {
-		h.logger.Error("mark used", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+	if ml.Purpose != "invite" || ml.HouseholdID == nil {
+		h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]any{
+			"Email":  emailAddr,
+			"Invite": true,
+			"Error":  "This code is not a valid invitation.",
+		})
 		return
 	}
 
@@ -342,12 +389,12 @@ func (h *AuthHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	ml, err := h.magicLinkStore.Create(emailAddr, "invite", &ac.HouseholdID)
 	if err != nil {
-		h.logger.Error("create invite link", "error", err)
+		h.logger.Error("create invite code", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "invite", household.Name); err != nil {
+	if err := h.emailClient.SendAuthCode(emailAddr, ml.Token, "invite", household.Name); err != nil {
 		h.logger.Error("send invite email", "error", err)
 		http.Error(w, "Failed to send invitation", http.StatusInternalServerError)
 		return

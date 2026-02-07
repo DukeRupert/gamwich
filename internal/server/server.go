@@ -184,8 +184,9 @@ func (s *Server) Router() http.Handler {
 	outerMux.HandleFunc("POST /login", s.rateLimitedHandler(s.authH.Login))
 	outerMux.HandleFunc("GET /register", s.authH.RegisterPage)
 	outerMux.HandleFunc("POST /register", s.rateLimitedHandler(s.authH.Register))
-	outerMux.HandleFunc("GET /auth/verify", s.authH.Verify)
-	outerMux.HandleFunc("GET /invite/accept", s.authH.InviteAccept)
+	outerMux.HandleFunc("POST /auth/verify", s.rateLimitedHandler(s.authH.Verify))
+	outerMux.HandleFunc("GET /invite/accept", s.authH.InviteAcceptPage)
+	outerMux.HandleFunc("POST /invite/accept", s.rateLimitedHandler(s.authH.InviteAccept))
 	outerMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	outerMux.HandleFunc("GET /health", s.healthHandler)
 

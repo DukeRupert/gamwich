@@ -6,7 +6,7 @@ Gamwich currently has no authentication — all routes are public, and the activ
 
 1. **Multi-tenant support** — multiple households sharing one Gamwich instance with isolated data (required for the hosted tier, useful for self-hosted users sharing an instance)
 2. **Secure remote access** — protect the app when accessed over the internet (required for both self-hosted remote use and the cloud tier's tunnel relay)
-3. **Passwordless auth** — magic link emails via Postmark (simple for families, no passwords to manage)
+3. **Passwordless auth** — one-time code emails via Postmark (simple for families, no passwords to manage)
 
 Auth accounts are **separate from family members** — parents/adults have login accounts, kids remain lightweight profiles. All devices (including kiosks) must authenticate.
 
@@ -28,7 +28,7 @@ This plan covers the auth foundation needed by **all tiers** (free, cloud, hoste
 | `users` | id, email (UNIQUE), name, created_at, updated_at |
 | `household_members` | id, household_id FK, user_id FK, role (admin/member), UNIQUE(household_id, user_id) |
 | `sessions` | id, token (UNIQUE), user_id FK, household_id FK, expires_at |
-| `magic_links` | id, token (UNIQUE), email, purpose (login/register/invite), household_id FK (nullable), expires_at, used_at |
+| `magic_links` | id, token (6-digit code), email, purpose (login/register/invite), household_id FK (nullable), expires_at, used_at, attempts |
 
 **Schema changes to existing tables:**
 - Add `household_id INTEGER REFERENCES households(id) ON DELETE CASCADE` to: `family_members`, `calendar_events`, `chore_areas`, `chores`, `grocery_categories`, `grocery_lists`, `notes`, `rewards`
@@ -62,13 +62,14 @@ SQLite doesn't support `ALTER TABLE ADD COLUMN ... NOT NULL` on tables with exis
 - `internal/store/user.go` — Create, GetByID, GetByEmail, Update, Delete
 - `internal/store/household.go` — Create, GetByID, Update, Delete, AddMember, RemoveMember, GetMember, ListMembers, ListHouseholdsForUser, UpdateMemberRole, **SeedDefaults** (inserts chore areas, grocery categories, default list, default settings for a new household)
 - `internal/store/session.go` — Create (generates 32-byte random token, 90-day expiry), GetByToken (returns nil if expired), Delete, DeleteExpired, DeleteByUserID
-- `internal/store/magic_link.go` — Create (generates 32-byte random token, 15-min expiry), GetByToken (nil if expired/used), MarkUsed, DeleteExpired
+- `internal/store/magic_link.go` — Create (generates 6-digit numeric code, 15-min expiry, invalidates previous codes for same email), GetByEmailAndCode, GetLatestByEmail, IncrementAttempts, MarkUsed, DeleteExpired
 
 ### Email client: `internal/email/postmark.go`
 - Simple HTTP POST to `https://api.postmarkapp.com/email`
 - Header: `X-Postmark-Server-Token`
-- Method: `SendMagicLink(toEmail, token, purpose, householdName string) error`
-- Constructs URL from `GAMWICH_BASE_URL` + `/auth/verify?token=xxx` (or `/invite/accept?token=xxx` for invites)
+- Method: `SendAuthCode(toEmail, code, purpose, householdName string) error`
+- For login/register: email body contains only the 6-digit code
+- For invite: email body contains both a navigation URL (`{baseURL}/invite/accept?email={encoded}`) and the 6-digit code
 - Accepts `httpClient` override for testing (same pattern as weather service)
 - Nil-safe: if no Postmark token configured, returns descriptive error
 
@@ -84,18 +85,19 @@ SQLite doesn't support `ALTER TABLE ADD COLUMN ... NOT NULL` on tables with exis
 ### Rate limiting: `internal/middleware/ratelimit.go`
 - In-memory rate limiter for auth endpoints (no external dependency)
 - Keyed by email address (for login/register) and by IP (for all auth endpoints)
-- Limits: 3 magic link requests per email per 15 minutes, 10 auth requests per IP per 15 minutes
+- Limits: 10 auth requests per IP per minute
 - Returns 429 Too Many Requests with Retry-After header
 - Simple `sync.Map` with TTL cleanup — no need for Redis at this scale
 
 ### Auth handlers: `internal/handler/auth.go`
 - `GET /login` — render login page (standalone, not using layout.html)
-- `POST /login` — rate-limited, parse email, create magic link (purpose=login), send via Postmark, show "check your email" (always show success to prevent email enumeration)
+- `POST /login` — rate-limited, parse email, create auth code (purpose=login), send via Postmark, show code entry form (always show form to prevent email enumeration)
 - `GET /register` — render registration page (email + household name)
-- `POST /register` — rate-limited, create household, create user, add user as admin, send magic link (purpose=register)
-- `GET /auth/verify?token=xxx` — verify magic link, find user, create session, set `gamwich_session` cookie (HttpOnly, SameSite=Lax, Secure if HTTPS, 90 days), redirect to `/`
-- `GET /invite/accept?token=xxx` — verify invite link, create user if needed, add to household, create session, redirect
-- `POST /invite` — admin-only, rate-limited, parse email, create magic link (purpose=invite, household_id from context), send email
+- `POST /register` — rate-limited, create household, create user, add user as admin, send auth code (purpose=register)
+- `POST /auth/verify` — rate-limited, validate email + 6-digit code (max 5 attempts per code), create session, set `gamwich_session` cookie (HttpOnly, SameSite=Lax, Secure if HTTPS, 90 days), redirect to `/`
+- `GET /invite/accept?email=xxx` — show code entry form with email pre-filled
+- `POST /invite/accept` — rate-limited, validate email + 6-digit code, create user if needed, add to household, create session, redirect
+- `POST /invite` — admin-only, rate-limited, parse email, create auth code (purpose=invite, household_id from context), send email
 - `POST /logout` — delete session, clear cookie, redirect to `/login`
 
 ### Household switching (multi-household users)
@@ -146,7 +148,7 @@ A user can belong to multiple households (e.g., invited to a neighbor's instance
 ### Route split in `internal/server/server.go`
 **Public routes** (registered directly on outer mux):
 - `GET /login`, `POST /login`, `GET /register`, `POST /register`
-- `GET /auth/verify`, `GET /invite/accept`
+- `POST /auth/verify`, `GET /invite/accept`, `POST /invite/accept`
 - `GET /static/*`
 
 **Protected routes** (wrapped with `RequireAuth` middleware):
@@ -197,7 +199,7 @@ Go 1.22+ ServeMux matches most-specific first, so `/login` matches before the ca
 | `internal/store/user.go` | User CRUD |
 | `internal/store/household.go` | Household CRUD + membership + seed defaults |
 | `internal/store/session.go` | Session management |
-| `internal/store/magic_link.go` | Magic link lifecycle |
+| `internal/store/magic_link.go` | Auth code lifecycle |
 | `internal/email/postmark.go` | Postmark API client |
 | `internal/auth/context.go` | Auth context helpers |
 | `internal/middleware/auth.go` | Auth + admin middleware |
@@ -241,11 +243,11 @@ Go 1.22+ ServeMux matches most-specific first, so `/login` matches before the ca
 
 1. `go test ./...` — all existing tests updated with householdID, new store/middleware/email/ratelimit tests pass
 2. New tests verify cross-tenant isolation: data from household A never appears in household B queries
-3. Manual flow: register -> check email -> click magic link -> session created -> dashboard loads -> invite another user -> they accept -> both see same household data
+3. Manual flow: register -> check email -> enter 6-digit code -> session created -> dashboard loads -> invite another user -> they enter code -> both see same household data
 4. HTMX test: expired session on HTMX request returns `HX-Redirect: /login` (not HTML swap)
 5. WebSocket test: broadcasts only reach clients in the same household
 6. UNIQUE constraint test: two households can both have a family member named "Mom" and a chore area named "Kitchen"
-7. Rate limiting test: rapid magic link requests return 429 after threshold
+7. Rate limiting test: rapid auth code requests return 429 after threshold
 8. Household switching test: user in multiple households can switch, active user cookie is cleared on switch
 9. Cookie security test: session cookie has Secure flag when served over HTTPS
 

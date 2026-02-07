@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 )
 
@@ -52,8 +53,8 @@ type postmarkEmail struct {
 	TextBody string `json:"TextBody"`
 }
 
-// SendMagicLink sends a magic link email for login, registration, or invitation.
-func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) error {
+// SendAuthCode sends an authentication code email for login, registration, or invitation.
+func (c *Client) SendAuthCode(toEmail, code, purpose, householdName string) error {
 	// Copy config under lock
 	c.mu.RLock()
 	serverToken := c.serverToken
@@ -66,28 +67,38 @@ func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) er
 		return fmt.Errorf("email client not configured: missing server token")
 	}
 
-	var subject, action string
+	var subject, textBody, htmlBody string
 	switch purpose {
 	case "login":
 		subject = "Sign in to Gamwich"
-		action = "sign in"
+		textBody = fmt.Sprintf("Your sign-in code is: %s\n\nEnter this code to sign in. It expires in 15 minutes.", code)
+		htmlBody = fmt.Sprintf(
+			`<p>Your sign-in code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:4px">%s</p><p>Enter this code to sign in. It expires in 15 minutes.</p>`,
+			code,
+		)
 	case "register":
 		subject = "Welcome to Gamwich"
-		action = "complete your registration"
+		textBody = fmt.Sprintf("Your registration code is: %s\n\nEnter this code to complete your registration. It expires in 15 minutes.", code)
+		htmlBody = fmt.Sprintf(
+			`<p>Your registration code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:4px">%s</p><p>Enter this code to complete your registration. It expires in 15 minutes.</p>`,
+			code,
+		)
 	case "invite":
 		subject = fmt.Sprintf("You've been invited to %s on Gamwich", householdName)
-		action = "accept your invitation"
+		inviteURL := fmt.Sprintf("%s/invite/accept?email=%s", baseURL, url.QueryEscape(toEmail))
+		textBody = fmt.Sprintf("You've been invited to %s on Gamwich!\n\nVisit: %s\n\nYour code is: %s\n\nThis code expires in 15 minutes.", householdName, inviteURL, code)
+		htmlBody = fmt.Sprintf(
+			`<p>You've been invited to <strong>%s</strong> on Gamwich!</p><p><a href="%s">Click here to accept your invitation</a></p><p>Your code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:4px">%s</p><p>This code expires in 15 minutes.</p>`,
+			householdName, inviteURL, code,
+		)
 	default:
-		subject = "Your Gamwich link"
-		action = "continue"
+		subject = "Your Gamwich code"
+		textBody = fmt.Sprintf("Your code is: %s\n\nThis code expires in 15 minutes.", code)
+		htmlBody = fmt.Sprintf(
+			`<p>Your code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:4px">%s</p><p>This code expires in 15 minutes.</p>`,
+			code,
+		)
 	}
-
-	link := fmt.Sprintf("%s/auth/verify?token=%s", baseURL, token)
-	textBody := fmt.Sprintf("Click the link below to %s:\n\n%s\n\nThis link expires in 15 minutes.", action, link)
-	htmlBody := fmt.Sprintf(
-		`<p>Click the link below to %s:</p><p><a href="%s">%s</a></p><p>This link expires in 15 minutes.</p>`,
-		action, link, action,
-	)
 
 	payload := postmarkEmail{
 		From:     fromEmail,
