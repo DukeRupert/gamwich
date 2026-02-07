@@ -2624,7 +2624,7 @@ func (h *TemplateHandler) ThemeSettingsUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	validThemes := map[string]bool{"garden": true, "forest": true, "cupcake": true, "dracula": true, "gamwich": true}
+	validThemes := map[string]bool{"light": true, "dark": true, "sunny": true, "cozy": true, "grounded": true, "starfall": true, "silverglade": true, "seamist": true, "irondeep": true, "horsemark": true, "citadel": true}
 
 	selected := r.FormValue("theme_selected")
 	if selected != "" && !validThemes[selected] {

@@ -2,7 +2,7 @@
 <html lang="en">
 <script>
 (function() {
-    var t = localStorage.getItem('gamwich_theme') || 'garden';
+    var t = localStorage.getItem('gamwich_theme') || 'light';
     document.documentElement.setAttribute('data-theme', t);
 })();
 </script>
@@ -26,39 +26,283 @@
         .htmx-request.htmx-indicator { display: inline; }
         .night-mode { filter: brightness(0.15); transition: filter 1s ease; }
 
-        /* Custom gamwich theme — Shire-inspired palette */
-        [data-theme="gamwich"] {
-            --p: 0.45 0.12 145;    /* moss green primary */
-            --pf: 0.38 0.12 145;
-            --pc: 0.98 0.01 145;
-            --s: 0.65 0.12 70;     /* warm amber secondary */
-            --sf: 0.58 0.12 70;
-            --sc: 0.20 0.02 70;
-            --a: 0.50 0.08 50;     /* earthy brown accent */
-            --af: 0.43 0.08 50;
-            --ac: 0.98 0.01 50;
-            --n: 0.40 0.03 60;     /* warm gray-brown neutral */
-            --nf: 0.33 0.03 60;
-            --nc: 0.95 0.01 80;
-            --b1: 0.95 0.02 85;    /* cream/parchment base */
-            --b2: 0.90 0.03 85;
-            --b3: 0.85 0.03 80;
-            --bc: 0.25 0.03 60;
-            --su: 0.55 0.14 145;   /* success green */
-            --suc: 0.98 0.01 145;
-            --wa: 0.70 0.14 70;    /* warning amber */
-            --wac: 0.20 0.02 70;
-            --er: 0.55 0.15 25;    /* error red */
-            --erc: 0.98 0.01 25;
-            --in: 0.55 0.10 240;   /* info blue */
-            --inc: 0.98 0.01 240;
+        /* Custom sunny theme — bright meadows, golden sunlight */
+        [data-theme="sunny"] {
+            --p: 0.529 0.108 138.4;
+            --pc: 0.972 0.019 93.7;
+            --s: 0.707 0.128 86.0;
+            --sc: 0.972 0.019 93.7;
+            --a: 0.667 0.077 243.1;
+            --ac: 0.972 0.019 93.7;
+            --n: 0.495 0.051 96.5;
+            --nc: 0.972 0.019 93.7;
+            --b1: 0.972 0.019 93.7;
+            --b2: 0.929 0.043 95.5;
+            --b3: 0.897 0.050 93.4;
+            --bc: 0.328 0.035 96.4;
+            --in: 0.667 0.077 243.1;
+            --inc: 0.932 0.027 234.0;
+            --su: 0.529 0.108 138.4;
+            --suc: 0.953 0.041 126.9;
+            --wa: 0.707 0.128 86.0;
+            --wac: 0.328 0.035 96.4;
+            --er: 0.587 0.143 41.7;
+            --erc: 0.924 0.036 53.7;
             --rounded-box: 0.75rem;
-            --rounded-btn: 0.5rem;
+            --rounded-btn: 1.5rem;
             --rounded-badge: 1rem;
             --animation-btn: 0.2s;
             --animation-input: 0.2s;
             --btn-focus-scale: 0.97;
             --tab-radius: 0.5rem;
+        }
+
+        /* Custom cozy theme — candlelit warmth, polished wood */
+        [data-theme="cozy"] {
+            --p: 0.735 0.143 83.7;
+            --pc: 0.279 0.029 89.8;
+            --s: 0.491 0.077 75.3;
+            --sc: 0.897 0.039 87.6;
+            --a: 0.547 0.071 72.9;
+            --ac: 0.897 0.039 87.6;
+            --n: 0.419 0.045 79.2;
+            --nc: 0.823 0.061 90.4;
+            --b1: 0.279 0.029 89.8;
+            --b2: 0.305 0.029 84.2;
+            --b3: 0.315 0.030 79.0;
+            --bc: 0.897 0.039 87.6;
+            --in: 0.608 0.062 228.6;
+            --inc: 0.916 0.028 219.8;
+            --su: 0.591 0.114 127.7;
+            --suc: 0.325 0.056 130.8;
+            --wa: 0.707 0.128 86.0;
+            --wac: 0.314 0.041 87.4;
+            --er: 0.587 0.143 41.7;
+            --erc: 0.924 0.036 53.7;
+            --rounded-box: 0.5rem;
+            --rounded-btn: 1rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.375rem;
+        }
+
+        /* Custom grounded theme — rich soil, weathered stone */
+        [data-theme="grounded"] {
+            --p: 0.430 0.083 136.1;
+            --pc: 0.937 0.025 91.6;
+            --s: 0.475 0.051 84.0;
+            --sc: 0.937 0.025 91.6;
+            --a: 0.547 0.071 72.9;
+            --ac: 0.937 0.025 91.6;
+            --n: 0.463 0.025 107.3;
+            --nc: 0.937 0.025 91.6;
+            --b1: 0.937 0.025 91.6;
+            --b2: 0.912 0.030 94.4;
+            --b3: 0.858 0.034 91.7;
+            --bc: 0.298 0.029 124.8;
+            --in: 0.552 0.058 221.3;
+            --inc: 0.887 0.014 219.6;
+            --su: 0.430 0.083 136.1;
+            --suc: 0.911 0.046 129.0;
+            --wa: 0.615 0.105 86.7;
+            --wac: 0.298 0.029 124.8;
+            --er: 0.524 0.116 41.7;
+            --erc: 0.897 0.028 67.5;
+            --rounded-box: 0.5rem;
+            --rounded-btn: 0.75rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.25rem;
+        }
+
+        /* Custom starfall theme — deep twilight, starlight on stone */
+        [data-theme="starfall"] {
+            --p: 0.547 0.109 260.3;
+            --pc: 0.936 0.022 286.0;
+            --s: 0.506 0.086 296.9;
+            --sc: 0.936 0.022 286.0;
+            --a: 0.656 0.078 195.4;
+            --ac: 0.936 0.022 286.0;
+            --n: 0.362 0.051 283.5;
+            --nc: 0.832 0.039 292.1;
+            --b1: 0.213 0.032 272.7;
+            --b2: 0.240 0.035 273.9;
+            --b3: 0.251 0.046 272.0;
+            --bc: 0.832 0.039 292.1;
+            --in: 0.594 0.112 256.1;
+            --inc: 0.934 0.022 256.7;
+            --su: 0.646 0.093 165.3;
+            --suc: 0.270 0.022 186.2;
+            --wa: 0.667 0.106 87.3;
+            --wac: 0.274 0.028 101.9;
+            --er: 0.547 0.134 13.0;
+            --erc: 0.921 0.018 0.4;
+            --rounded-box: 0.5rem;
+            --rounded-btn: 0.75rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.25rem;
+        }
+
+        /* Custom silverglade theme — enchanted forest, golden leaf accents */
+        [data-theme="silverglade"] {
+            --p: 0.470 0.099 140.1;
+            --pc: 0.974 0.011 128.6;
+            --s: 0.373 0.075 139.6;
+            --sc: 0.974 0.011 128.6;
+            --a: 0.843 0.152 89.8;
+            --ac: 0.269 0.033 138.0;
+            --n: 0.446 0.046 133.7;
+            --nc: 0.974 0.011 128.6;
+            --b1: 0.974 0.011 128.6;
+            --b2: 0.951 0.020 131.5;
+            --b3: 0.916 0.030 132.6;
+            --bc: 0.269 0.033 138.0;
+            --in: 0.583 0.078 165.5;
+            --inc: 0.918 0.018 179.3;
+            --su: 0.470 0.099 140.1;
+            --suc: 0.921 0.043 136.7;
+            --wa: 0.843 0.152 89.8;
+            --wac: 0.269 0.033 138.0;
+            --er: 0.527 0.128 32.5;
+            --erc: 0.917 0.021 48.5;
+            --rounded-box: 0.625rem;
+            --rounded-btn: 1rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.375rem;
+        }
+
+        /* Custom seamist theme — pale shores, silver rain */
+        [data-theme="seamist"] {
+            --p: 0.579 0.072 238.9;
+            --pc: 0.960 0.003 247.9;
+            --s: 0.621 0.029 251.8;
+            --sc: 0.960 0.003 247.9;
+            --a: 0.649 0.040 258.4;
+            --ac: 0.960 0.003 247.9;
+            --n: 0.459 0.028 264.2;
+            --nc: 0.960 0.003 247.9;
+            --b1: 0.960 0.003 247.9;
+            --b2: 0.943 0.006 264.5;
+            --b3: 0.929 0.007 247.9;
+            --bc: 0.307 0.017 255.6;
+            --in: 0.579 0.072 238.9;
+            --inc: 0.924 0.017 236.7;
+            --su: 0.583 0.078 165.5;
+            --suc: 0.933 0.014 174.1;
+            --wa: 0.653 0.086 95.7;
+            --wac: 0.307 0.017 255.6;
+            --er: 0.529 0.106 21.3;
+            --erc: 0.920 0.018 17.5;
+            --rounded-box: 0.375rem;
+            --rounded-btn: 0.5rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.25rem;
+        }
+
+        /* Custom irondeep theme — forge fire, deep stone, gold & mithril */
+        [data-theme="irondeep"] {
+            --p: 0.550 0.170 34.8;
+            --pc: 0.933 0.023 84.6;
+            --s: 0.758 0.146 73.1;
+            --sc: 0.204 0.008 48.3;
+            --a: 0.614 0.037 237.4;
+            --ac: 0.933 0.023 84.6;
+            --n: 0.328 0.022 84.5;
+            --nc: 0.835 0.024 84.6;
+            --b1: 0.204 0.008 48.3;
+            --b2: 0.229 0.013 78.0;
+            --b3: 0.245 0.016 84.5;
+            --bc: 0.835 0.024 84.6;
+            --in: 0.605 0.071 238.7;
+            --inc: 0.931 0.013 233.8;
+            --su: 0.585 0.114 133.3;
+            --suc: 0.259 0.035 141.4;
+            --wa: 0.666 0.130 77.1;
+            --wac: 0.263 0.023 84.3;
+            --er: 0.550 0.170 34.8;
+            --erc: 0.933 0.023 84.6;
+            --rounded-box: 0.25rem;
+            --rounded-btn: 0.25rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.125rem;
+        }
+
+        /* Custom horsemark theme — golden plains, green hills, timber halls */
+        [data-theme="horsemark"] {
+            --p: 0.542 0.102 85.6;
+            --pc: 0.968 0.022 89.8;
+            --s: 0.524 0.107 137.6;
+            --sc: 0.968 0.022 89.8;
+            --a: 0.536 0.113 51.5;
+            --ac: 0.968 0.022 89.8;
+            --n: 0.436 0.028 79.5;
+            --nc: 0.968 0.022 89.8;
+            --b1: 0.968 0.022 89.8;
+            --b2: 0.950 0.030 90.3;
+            --b3: 0.898 0.061 88.4;
+            --bc: 0.281 0.029 84.1;
+            --in: 0.549 0.063 232.3;
+            --inc: 0.912 0.017 236.7;
+            --su: 0.524 0.107 137.6;
+            --suc: 0.927 0.039 126.1;
+            --wa: 0.542 0.102 85.6;
+            --wac: 0.281 0.029 84.1;
+            --er: 0.536 0.113 51.5;
+            --erc: 0.911 0.031 48.4;
+            --rounded-box: 0.5rem;
+            --rounded-btn: 1rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.375rem;
+        }
+
+        /* Custom citadel theme — white stone, silver & black, noble severity */
+        [data-theme="citadel"] {
+            --p: 0.222 0.019 284.7;
+            --pc: 0.968 0.003 286.4;
+            --s: 0.552 0.078 269.6;
+            --sc: 0.968 0.003 286.4;
+            --a: 0.711 0.023 285.8;
+            --ac: 0.222 0.019 284.7;
+            --n: 0.414 0.023 285.3;
+            --nc: 0.968 0.003 286.4;
+            --b1: 0.968 0.003 286.4;
+            --b2: 0.947 0.004 286.3;
+            --b3: 0.932 0.005 286.3;
+            --bc: 0.222 0.019 284.7;
+            --in: 0.496 0.109 262.9;
+            --inc: 0.916 0.016 253.9;
+            --su: 0.522 0.083 159.1;
+            --suc: 0.928 0.013 159.9;
+            --wa: 0.600 0.086 95.6;
+            --wac: 0.222 0.019 284.7;
+            --er: 0.502 0.128 22.9;
+            --erc: 0.918 0.015 17.4;
+            --rounded-box: 0.25rem;
+            --rounded-btn: 0.25rem;
+            --rounded-badge: 1rem;
+            --animation-btn: 0.2s;
+            --animation-input: 0.2s;
+            --btn-focus-scale: 0.97;
+            --tab-radius: 0.125rem;
         }
 
         /* View transition crossfades */
@@ -277,9 +521,9 @@
 
             // Theme state
             themeMode: '{{with index .ThemeSettings "theme_mode"}}{{.}}{{else}}manual{{end}}',
-            themeSelected: '{{with index .ThemeSettings "theme_selected"}}{{.}}{{else}}garden{{end}}',
-            themeLight: '{{with index .ThemeSettings "theme_light"}}{{.}}{{else}}garden{{end}}',
-            themeDark: '{{with index .ThemeSettings "theme_dark"}}{{.}}{{else}}forest{{end}}',
+            themeSelected: '{{with index .ThemeSettings "theme_selected"}}{{.}}{{else}}light{{end}}',
+            themeLight: '{{with index .ThemeSettings "theme_light"}}{{.}}{{else}}light{{end}}',
+            themeDark: '{{with index .ThemeSettings "theme_dark"}}{{.}}{{else}}dark{{end}}',
 
             // Kiosk state
             isIdle: false,
@@ -332,7 +576,7 @@
                 } else if (this.themeMode === 'quiet-hours') {
                     theme = this.isNightMode ? this.themeDark : this.themeLight;
                 } else {
-                    theme = this.themeSelected || 'garden';
+                    theme = this.themeSelected || 'light';
                 }
                 document.documentElement.setAttribute('data-theme', theme);
                 localStorage.setItem('gamwich_theme', theme);
