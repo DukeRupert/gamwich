@@ -3,7 +3,7 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -31,12 +31,14 @@ func NewMessage(entity, action string, id int64, extra map[string]any) Message {
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*Client]struct{}
+	logger  *slog.Logger
 }
 
 // NewHub creates a new Hub.
-func NewHub() *Hub {
+func NewHub(logger *slog.Logger) *Hub {
 	return &Hub{
 		clients: make(map[*Client]struct{}),
+		logger:  logger,
 	}
 }
 
@@ -61,7 +63,7 @@ func (h *Hub) Unregister(c *Client) {
 func (h *Hub) Broadcast(msg Message) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("websocket: marshal broadcast: %v", err)
+		h.logger.Error("marshal broadcast", "error", err)
 		return
 	}
 

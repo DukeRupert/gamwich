@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -66,7 +67,7 @@ func (e *s3NotFound) Error() string { return "NoSuchKey" }
 
 func TestManagerStateLifecycle(t *testing.T) {
 	// Without S3 config -> disabled
-	m := NewManager(Config{}, nil, nil, nil, nil)
+	m := NewManager(Config{}, nil, nil, nil, nil, slog.Default())
 	if m.Status().State != StateDisabled {
 		t.Errorf("state = %q, want %q", m.Status().State, StateDisabled)
 	}
@@ -74,7 +75,7 @@ func TestManagerStateLifecycle(t *testing.T) {
 	// With S3 config -> idle
 	m2 := NewManager(Config{
 		S3: S3Config{Bucket: "test", AccessKey: "key", SecretKey: "secret"},
-	}, nil, nil, nil, nil)
+	}, nil, nil, nil, nil, slog.Default())
 	if m2.Status().State != StateIdle {
 		t.Errorf("state = %q, want %q", m2.Status().State, StateIdle)
 	}
@@ -91,7 +92,7 @@ func TestManagerStatusCallback(t *testing.T) {
 
 	m := NewManager(Config{
 		S3: S3Config{Bucket: "test", AccessKey: "key", SecretKey: "secret"},
-	}, nil, nil, nil, cb)
+	}, nil, nil, nil, cb, slog.Default())
 
 	m.setStatus(Status{State: StateRunning, InProgress: true})
 	m.setStatus(Status{State: StateIdle})
@@ -112,7 +113,7 @@ func TestManagerStatusCallback(t *testing.T) {
 func TestManagerStopSafety(t *testing.T) {
 	m := NewManager(Config{
 		S3: S3Config{Bucket: "test", AccessKey: "key", SecretKey: "secret"},
-	}, nil, nil, nil, nil)
+	}, nil, nil, nil, nil, slog.Default())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.Start(ctx)
@@ -125,7 +126,7 @@ func TestManagerStopSafety(t *testing.T) {
 }
 
 func TestManagerCachedKey(t *testing.T) {
-	m := NewManager(Config{}, nil, nil, nil, nil)
+	m := NewManager(Config{}, nil, nil, nil, nil, slog.Default())
 
 	if m.HasCachedKey(1) {
 		t.Error("expected no cached key")
@@ -151,7 +152,7 @@ func TestUpdateS3Config(t *testing.T) {
 	}
 
 	// Start disabled
-	m := NewManager(Config{}, nil, nil, nil, cb)
+	m := NewManager(Config{}, nil, nil, nil, cb, slog.Default())
 	if m.Status().State != StateDisabled {
 		t.Fatalf("initial state = %q, want %q", m.Status().State, StateDisabled)
 	}
@@ -182,7 +183,7 @@ func TestUpdateS3Config(t *testing.T) {
 }
 
 func TestManagerDisabledNoStart(t *testing.T) {
-	m := NewManager(Config{}, nil, nil, nil, nil)
+	m := NewManager(Config{}, nil, nil, nil, nil, slog.Default())
 
 	ctx := context.Background()
 	m.Start(ctx) // should be a no-op for disabled state

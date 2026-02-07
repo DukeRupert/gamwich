@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,10 +16,11 @@ type NoteHandler struct {
 	noteStore   *store.NoteStore
 	memberStore *store.FamilyMemberStore
 	hub         *websocket.Hub
+	logger      *slog.Logger
 }
 
-func NewNoteHandler(ns *store.NoteStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *NoteHandler {
-	return &NoteHandler{noteStore: ns, memberStore: ms, hub: hub}
+func NewNoteHandler(ns *store.NoteStore, ms *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *NoteHandler {
+	return &NoteHandler{noteStore: ns, memberStore: ms, hub: hub, logger: logger}
 }
 
 func (h *NoteHandler) broadcast(msg websocket.Message) {
@@ -66,7 +67,7 @@ func (h *NoteHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	note, err := h.noteStore.Create(req.Title, req.Body, req.AuthorID, req.Pinned, req.Priority, req.ExpiresAt)
 	if err != nil {
-		log.Printf("failed to create note: %v", err)
+		h.logger.Error("create note", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create note"})
 		return
 	}
@@ -172,7 +173,7 @@ func (h *NoteHandler) TogglePinned(w http.ResponseWriter, r *http.Request) {
 
 	note, err := h.noteStore.TogglePinned(id)
 	if err != nil {
-		log.Printf("failed to toggle note pin: %v", err)
+		h.logger.Error("toggle note pin", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to toggle pin"})
 		return
 	}

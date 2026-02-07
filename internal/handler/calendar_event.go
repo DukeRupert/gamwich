@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -18,10 +18,11 @@ type CalendarEventHandler struct {
 	eventStore  *store.EventStore
 	memberStore *store.FamilyMemberStore
 	hub         *websocket.Hub
+	logger      *slog.Logger
 }
 
-func NewCalendarEventHandler(es *store.EventStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *CalendarEventHandler {
-	return &CalendarEventHandler{eventStore: es, memberStore: ms, hub: hub}
+func NewCalendarEventHandler(es *store.EventStore, ms *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *CalendarEventHandler {
+	return &CalendarEventHandler{eventStore: es, memberStore: ms, hub: hub, logger: logger}
 }
 
 func (h *CalendarEventHandler) broadcast(msg websocket.Message) {
@@ -94,7 +95,7 @@ func (h *CalendarEventHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	event, err := h.eventStore.CreateWithRecurrence(req.Title, req.Description, startTime, endTime, req.AllDay, req.FamilyMemberID, req.Location, req.RecurrenceRule)
 	if err != nil {
-		log.Printf("failed to create calendar event: %v", err)
+		h.logger.Error("create calendar event", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create event"})
 		return
 	}
@@ -145,7 +146,7 @@ func (h *CalendarEventHandler) List(w http.ResponseWriter, r *http.Request) {
 	for _, parent := range recurring {
 		rule, err := recurrence.Parse(parent.RecurrenceRule)
 		if err != nil {
-			log.Printf("skip recurring event %d: invalid rule: %v", parent.ID, err)
+			h.logger.Error("skip recurring event", "event_id", parent.ID, "error", err)
 			continue
 		}
 

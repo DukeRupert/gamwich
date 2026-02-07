@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -21,12 +21,13 @@ type Scheduler struct {
 	chores   *store.ChoreStore
 	members  *store.FamilyMemberStore
 	interval time.Duration
+	logger   *slog.Logger
 	cancel   context.CancelFunc
 	done     chan struct{}
 }
 
 // NewScheduler creates a notification scheduler.
-func NewScheduler(svc *Service, pushStore *store.PushStore, eventStore *store.EventStore, choreStore *store.ChoreStore, memberStore *store.FamilyMemberStore) *Scheduler {
+func NewScheduler(svc *Service, pushStore *store.PushStore, eventStore *store.EventStore, choreStore *store.ChoreStore, memberStore *store.FamilyMemberStore, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		service:  svc,
 		push:     pushStore,
@@ -34,6 +35,7 @@ func NewScheduler(svc *Service, pushStore *store.PushStore, eventStore *store.Ev
 		chores:   choreStore,
 		members:  memberStore,
 		interval: 60 * time.Second,
+		logger:   logger,
 	}
 }
 
@@ -78,7 +80,7 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) tick() {
 	householdIDs, err := s.push.ListHouseholdIDs()
 	if err != nil {
-		log.Printf("push scheduler: list households: %v", err)
+		s.logger.Error("list households", "error", err)
 		return
 	}
 
@@ -94,7 +96,7 @@ func (s *Scheduler) checkCalendarReminders(householdID int64) {
 
 	events, err := s.events.ListUpcomingWithReminders(now, windowEnd)
 	if err != nil {
-		log.Printf("push scheduler: calendar reminders: %v", err)
+		s.logger.Error("calendar reminders query", "error", err)
 		return
 	}
 
@@ -107,7 +109,7 @@ func (s *Scheduler) checkCalendarReminders(householdID int64) {
 
 		sent, err := s.push.WasSent(householdID, model.NotifTypeCalendarReminder, refID, leadTime)
 		if err != nil {
-			log.Printf("push scheduler: check sent: %v", err)
+			s.logger.Error("check sent status", "error", err)
 			continue
 		}
 		if sent {
@@ -117,7 +119,7 @@ func (s *Scheduler) checkCalendarReminders(householdID int64) {
 		// Determine who to notify: assigned member or all household members
 		subs, err := s.push.ListByHousehold(householdID)
 		if err != nil {
-			log.Printf("push scheduler: list subs: %v", err)
+			s.logger.Error("list subscriptions", "error", err)
 			continue
 		}
 
@@ -140,7 +142,7 @@ func (s *Scheduler) checkCalendarReminders(householdID int64) {
 				if errors.Is(err, ErrExpired) {
 					s.push.DeleteByEndpoint(sub.Endpoint)
 				} else {
-					log.Printf("push scheduler: send calendar reminder: %v", err)
+					s.logger.Error("send calendar reminder", "error", err)
 				}
 			}
 		}
@@ -165,7 +167,7 @@ func (s *Scheduler) checkChoreDue(householdID int64) {
 
 	chores, err := s.chores.List()
 	if err != nil {
-		log.Printf("push scheduler: list chores: %v", err)
+		s.logger.Error("list chores", "error", err)
 		return
 	}
 
@@ -181,7 +183,7 @@ func (s *Scheduler) checkChoreDue(householdID int64) {
 
 	subs, err := s.push.ListByHousehold(householdID)
 	if err != nil {
-		log.Printf("push scheduler: list subs for chores: %v", err)
+		s.logger.Error("list subscriptions for chores", "error", err)
 		return
 	}
 
@@ -207,7 +209,7 @@ func (s *Scheduler) checkChoreDue(householdID int64) {
 			if errors.Is(err, ErrExpired) {
 				s.push.DeleteByEndpoint(sub.Endpoint)
 			} else {
-				log.Printf("push scheduler: send chore reminder: %v", err)
+				s.logger.Error("send chore reminder", "error", err)
 			}
 		}
 	}
@@ -220,7 +222,7 @@ func (s *Scheduler) checkChoreDue(householdID int64) {
 func (s *Scheduler) SendGroceryNotification(householdID, excludeUserID int64, itemName string) {
 	subs, err := s.push.ListByHousehold(householdID)
 	if err != nil {
-		log.Printf("push: grocery notification list subs: %v", err)
+		s.logger.Error("grocery notification list subscriptions", "error", err)
 		return
 	}
 
@@ -244,7 +246,7 @@ func (s *Scheduler) SendGroceryNotification(householdID, excludeUserID int64, it
 			if errors.Is(err, ErrExpired) {
 				s.push.DeleteByEndpoint(sub.Endpoint)
 			} else {
-				log.Printf("push: send grocery notification: %v", err)
+				s.logger.Error("send grocery notification", "error", err)
 			}
 		}
 	}

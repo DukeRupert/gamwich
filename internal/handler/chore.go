@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,10 +16,11 @@ type ChoreHandler struct {
 	choreStore  *store.ChoreStore
 	memberStore *store.FamilyMemberStore
 	hub         *websocket.Hub
+	logger      *slog.Logger
 }
 
-func NewChoreHandler(cs *store.ChoreStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *ChoreHandler {
-	return &ChoreHandler{choreStore: cs, memberStore: ms, hub: hub}
+func NewChoreHandler(cs *store.ChoreStore, ms *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *ChoreHandler {
+	return &ChoreHandler{choreStore: cs, memberStore: ms, hub: hub, logger: logger}
 }
 
 func (h *ChoreHandler) broadcast(msg websocket.Message) {
@@ -64,7 +65,7 @@ func (h *ChoreHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	chore, err := h.choreStore.Create(req.Title, req.Description, req.AreaID, req.Points, req.RecurrenceRule, req.AssignedTo)
 	if err != nil {
-		log.Printf("failed to create chore: %v", err)
+		h.logger.Error("create chore", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create chore"})
 		return
 	}
@@ -177,7 +178,7 @@ func (h *ChoreHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 	completion, err := h.choreStore.CreateCompletion(id, req.CompletedBy, existing.Points)
 	if err != nil {
-		log.Printf("failed to complete chore: %v", err)
+		h.logger.Error("complete chore", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to complete chore"})
 		return
 	}

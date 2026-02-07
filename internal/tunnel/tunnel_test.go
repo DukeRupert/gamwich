@@ -1,26 +1,27 @@
 package tunnel
 
 import (
+	"log/slog"
 	"strings"
 	"testing"
 )
 
 func TestNewManager_EmptyToken(t *testing.T) {
-	m := NewManager(Config{}, nil)
+	m := NewManager(Config{}, nil, slog.Default())
 	if s := m.Status(); s.State != StateDisabled {
 		t.Errorf("expected StateDisabled, got %s", s.State)
 	}
 }
 
 func TestNewManager_TokenDisabled(t *testing.T) {
-	m := NewManager(Config{Token: "test-token", Enabled: false}, nil)
+	m := NewManager(Config{Token: "test-token", Enabled: false}, nil, slog.Default())
 	if s := m.Status(); s.State != StateStopped {
 		t.Errorf("expected StateStopped, got %s", s.State)
 	}
 }
 
 func TestNewManager_DefaultCloudflaredPath(t *testing.T) {
-	m := NewManager(Config{Token: "test-token"}, nil)
+	m := NewManager(Config{Token: "test-token"}, nil, slog.Default())
 	if m.cfg.CloudflaredPath != "cloudflared" {
 		t.Errorf("expected default cloudflaredPath 'cloudflared', got %q", m.cfg.CloudflaredPath)
 	}
@@ -34,7 +35,7 @@ func TestStatusCallback_Invoked(t *testing.T) {
 		gotStatus = s
 	}
 
-	m := NewManager(Config{Token: "test-token", Enabled: true}, cb)
+	m := NewManager(Config{Token: "test-token", Enabled: true}, cb, slog.Default())
 	m.mu.Lock()
 	m.setState(Status{State: StateConnecting})
 	m.mu.Unlock()
@@ -48,7 +49,7 @@ func TestStatusCallback_Invoked(t *testing.T) {
 }
 
 func TestStop_NoOp_WhenNotRunning(t *testing.T) {
-	m := NewManager(Config{Token: "test-token", Enabled: false}, nil)
+	m := NewManager(Config{Token: "test-token", Enabled: false}, nil, slog.Default())
 	// Should not panic or block
 	m.Stop()
 	if s := m.Status(); s.State != StateStopped {
@@ -60,7 +61,7 @@ func TestUpdateConfig_DisableStops(t *testing.T) {
 	var lastState State
 	cb := func(s Status) { lastState = s.State }
 
-	m := NewManager(Config{Token: "test-token", Enabled: true}, cb)
+	m := NewManager(Config{Token: "test-token", Enabled: true}, cb, slog.Default())
 	m.UpdateConfig(Config{Token: "test-token", Enabled: false})
 	if lastState != StateStopped {
 		t.Errorf("expected StateStopped, got %s", lastState)
@@ -71,7 +72,7 @@ func TestUpdateConfig_EmptyTokenDisables(t *testing.T) {
 	var lastState State
 	cb := func(s Status) { lastState = s.State }
 
-	m := NewManager(Config{Token: "test-token", Enabled: true}, cb)
+	m := NewManager(Config{Token: "test-token", Enabled: true}, cb, slog.Default())
 	m.UpdateConfig(Config{Token: "", Enabled: true})
 	if lastState != StateDisabled {
 		t.Errorf("expected StateDisabled, got %s", lastState)

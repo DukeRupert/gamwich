@@ -3,7 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -18,6 +18,7 @@ type WebhookHandler struct {
 	accountStore      *store.AccountStore
 	subscriptionStore *store.SubscriptionStore
 	licenseKeyStore   *store.LicenseKeyStore
+	logger            *slog.Logger
 }
 
 func NewWebhookHandler(
@@ -25,12 +26,14 @@ func NewWebhookHandler(
 	as *store.AccountStore,
 	ss *store.SubscriptionStore,
 	lks *store.LicenseKeyStore,
+	logger *slog.Logger,
 ) *WebhookHandler {
 	return &WebhookHandler{
 		stripeClient:      sc,
 		accountStore:      as,
 		subscriptionStore: ss,
 		licenseKeyStore:   lks,
+		logger:            logger,
 	}
 }
 
@@ -66,26 +69,26 @@ func (h *WebhookHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Requ
 func (h *WebhookHandler) handleCheckoutCompleted(event stripe.Event) {
 	var sess stripe.CheckoutSession
 	if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
-		log.Printf("webhook: unmarshal checkout session: %v", err)
+		h.logger.Error("unmarshal checkout session", "error", err)
 		return
 	}
 
 	email := sess.CustomerDetails.Email
 	if email == "" {
-		log.Printf("webhook: checkout session missing email")
+		h.logger.Error("checkout session missing email")
 		return
 	}
 
 	// Find or create account
 	account, err := h.accountStore.GetByEmail(email)
 	if err != nil {
-		log.Printf("webhook: get account by email: %v", err)
+		h.logger.Error("get account by email", "error", err)
 		return
 	}
 	if account == nil {
 		account, err = h.accountStore.Create(email)
 		if err != nil {
-			log.Printf("webhook: create account: %v", err)
+			h.logger.Error("create account", "error", err)
 			return
 		}
 	}
@@ -93,20 +96,20 @@ func (h *WebhookHandler) handleCheckoutCompleted(event stripe.Event) {
 	// Update Stripe customer ID
 	if sess.Customer != nil {
 		if err := h.accountStore.UpdateStripeCustomerID(account.ID, sess.Customer.ID); err != nil {
-			log.Printf("webhook: update stripe customer id: %v", err)
+			h.logger.Error("update stripe customer id", "error", err)
 		}
 	}
 
 	// Create subscription
 	sub, err := h.subscriptionStore.Create(account.ID, "cloud")
 	if err != nil {
-		log.Printf("webhook: create subscription: %v", err)
+		h.logger.Error("create subscription", "error", err)
 		return
 	}
 
 	if sess.Subscription != nil {
 		if err := h.subscriptionStore.UpdateStripeID(sub.ID, sess.Subscription.ID); err != nil {
-			log.Printf("webhook: update stripe subscription id: %v", err)
+			h.logger.Error("update stripe subscription id", "error", err)
 		}
 	}
 
@@ -114,11 +117,11 @@ func (h *WebhookHandler) handleCheckoutCompleted(event stripe.Event) {
 	features := "tunnel,backup,push"
 	_, err = h.licenseKeyStore.Create(account.ID, sub.ID, "cloud", features)
 	if err != nil {
-		log.Printf("webhook: create license key: %v", err)
+		h.logger.Error("create license key", "error", err)
 		return
 	}
 
-	log.Printf("webhook: checkout completed for %s", email)
+	h.logger.Info("checkout completed", "email", email)
 }
 
 // getSubscriptionIDFromInvoice extracts the subscription ID from an invoice's parent.
@@ -134,7 +137,7 @@ func getSubscriptionIDFromInvoice(invoice stripe.Invoice) string {
 func (h *WebhookHandler) handleInvoicePaid(event stripe.Event) {
 	var invoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
-		log.Printf("webhook: unmarshal invoice: %v", err)
+		h.logger.Error("unmarshal invoice", "error", err)
 		return
 	}
 
@@ -145,12 +148,12 @@ func (h *WebhookHandler) handleInvoicePaid(event stripe.Event) {
 
 	sub, err := h.subscriptionStore.GetByStripeID(subID)
 	if err != nil || sub == nil {
-		log.Printf("webhook: get subscription for invoice.paid: %v", err)
+		h.logger.Error("get subscription for invoice.paid", "error", err)
 		return
 	}
 
 	if err := h.subscriptionStore.UpdateStatus(sub.ID, "active"); err != nil {
-		log.Printf("webhook: update subscription status: %v", err)
+		h.logger.Error("update subscription status", "error", err)
 	}
 
 	// Extend license key expiry based on invoice period end
@@ -160,14 +163,14 @@ func (h *WebhookHandler) handleInvoicePaid(event stripe.Event) {
 	}
 	newExpiry := time.Unix(invoice.PeriodEnd, 0).UTC().Add(7 * 24 * time.Hour) // period end + 7 day buffer
 	if err := h.licenseKeyStore.UpdateExpiry(lk.ID, newExpiry); err != nil {
-		log.Printf("webhook: update license expiry: %v", err)
+		h.logger.Error("update license expiry", "error", err)
 	}
 }
 
 func (h *WebhookHandler) handleInvoicePaymentFailed(event stripe.Event) {
 	var invoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
-		log.Printf("webhook: unmarshal invoice: %v", err)
+		h.logger.Error("unmarshal invoice", "error", err)
 		return
 	}
 
@@ -182,14 +185,14 @@ func (h *WebhookHandler) handleInvoicePaymentFailed(event stripe.Event) {
 	}
 
 	if err := h.subscriptionStore.UpdateStatus(sub.ID, "past_due"); err != nil {
-		log.Printf("webhook: update subscription status to past_due: %v", err)
+		h.logger.Error("update subscription status to past_due", "error", err)
 	}
 }
 
 func (h *WebhookHandler) handleSubscriptionUpdated(event stripe.Event) {
 	var stripeSub stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &stripeSub); err != nil {
-		log.Printf("webhook: unmarshal subscription: %v", err)
+		h.logger.Error("unmarshal subscription", "error", err)
 		return
 	}
 
@@ -199,18 +202,18 @@ func (h *WebhookHandler) handleSubscriptionUpdated(event stripe.Event) {
 	}
 
 	if err := h.subscriptionStore.UpdateStatus(sub.ID, string(stripeSub.Status)); err != nil {
-		log.Printf("webhook: update subscription status: %v", err)
+		h.logger.Error("update subscription status", "error", err)
 	}
 
 	if err := h.subscriptionStore.SetCancelAtPeriodEnd(sub.ID, stripeSub.CancelAtPeriodEnd); err != nil {
-		log.Printf("webhook: set cancel at period end: %v", err)
+		h.logger.Error("set cancel at period end", "error", err)
 	}
 }
 
 func (h *WebhookHandler) handleSubscriptionDeleted(event stripe.Event) {
 	var stripeSub stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &stripeSub); err != nil {
-		log.Printf("webhook: unmarshal subscription: %v", err)
+		h.logger.Error("unmarshal subscription", "error", err)
 		return
 	}
 
@@ -220,7 +223,7 @@ func (h *WebhookHandler) handleSubscriptionDeleted(event stripe.Event) {
 	}
 
 	if err := h.subscriptionStore.UpdateStatus(sub.ID, "canceled"); err != nil {
-		log.Printf("webhook: update subscription status to canceled: %v", err)
+		h.logger.Error("update subscription status to canceled", "error", err)
 	}
 
 	// Set license expiry to cancel_at or now + 7 days
@@ -233,6 +236,6 @@ func (h *WebhookHandler) handleSubscriptionDeleted(event stripe.Event) {
 		expiry = time.Unix(stripeSub.CancelAt, 0).UTC()
 	}
 	if err := h.licenseKeyStore.UpdateExpiry(lk.ID, expiry); err != nil {
-		log.Printf("webhook: update license expiry on cancel: %v", err)
+		h.logger.Error("update license expiry on cancel", "error", err)
 	}
 }

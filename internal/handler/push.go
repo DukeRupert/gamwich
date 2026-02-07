@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/dukerupert/gamwich/internal/auth"
@@ -13,10 +13,11 @@ import (
 type PushHandler struct {
 	pushStore *store.PushStore
 	service   *push.Service
+	logger    *slog.Logger
 }
 
-func NewPushHandler(ps *store.PushStore, svc *push.Service) *PushHandler {
-	return &PushHandler{pushStore: ps, service: svc}
+func NewPushHandler(ps *store.PushStore, svc *push.Service, logger *slog.Logger) *PushHandler {
+	return &PushHandler{pushStore: ps, service: svc, logger: logger}
 }
 
 type subscribeRequest struct {
@@ -44,7 +45,7 @@ func (h *PushHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	sub, err := h.pushStore.CreateSubscription(userID, householdID, req.Endpoint, req.P256dh, req.Auth, req.DeviceName)
 	if err != nil {
-		log.Printf("create push subscription: %v", err)
+		h.logger.Error("create push subscription", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save subscription"})
 		return
 	}
@@ -63,7 +64,7 @@ func (h *PushHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.pushStore.DeleteSubscription(id, householdID); err != nil {
-		log.Printf("delete push subscription: %v", err)
+		h.logger.Error("delete push subscription", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete subscription"})
 		return
 	}
@@ -132,7 +133,7 @@ func (h *PushHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 
 	for _, p := range req.Preferences {
 		if err := h.pushStore.SetPreference(userID, householdID, p.Type, p.Enabled); err != nil {
-			log.Printf("set push preference: %v", err)
+			h.logger.Error("set push preference", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update preferences"})
 			return
 		}
@@ -163,7 +164,7 @@ func (h *PushHandler) TestNotification(w http.ResponseWriter, r *http.Request) {
 	sent := 0
 	for _, sub := range subs {
 		if err := h.service.Send(&sub, payload); err != nil {
-			log.Printf("test push send: %v", err)
+			h.logger.Error("test push send", "error", err)
 			continue
 		}
 		sent++

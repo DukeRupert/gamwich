@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,9 +14,12 @@ import (
 	"github.com/dukerupert/gamwich/internal/billing/server"
 	billingstripe "github.com/dukerupert/gamwich/internal/billing/stripe"
 	"github.com/dukerupert/gamwich/internal/email"
+	"github.com/dukerupert/gamwich/internal/logging"
 )
 
 func main() {
+	logger := logging.Setup(os.Getenv("BILLING_LOG_LEVEL"))
+
 	port := os.Getenv("BILLING_PORT")
 	if port == "" {
 		port = "8090"
@@ -34,7 +37,8 @@ func main() {
 
 	db, err := database.Open(dbPath)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -56,7 +60,7 @@ func main() {
 		EmailClient: emailClient,
 	}
 
-	srv := server.New(db, cfg)
+	srv := server.New(db, cfg, logger)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -77,9 +81,9 @@ func main() {
 			select {
 			case <-ticker.C:
 				if n, err := srv.SessionStore().DeleteExpired(); err != nil {
-					log.Printf("cleanup expired sessions: %v", err)
+					slog.Error("cleanup expired sessions", "error", err)
 				} else if n > 0 {
-					log.Printf("cleaned up %d expired sessions", n)
+					slog.Info("cleaned up expired sessions", "count", n)
 				}
 				srv.RateLimiter().Cleanup()
 			case <-cleanupCtx.Done():
@@ -89,9 +93,10 @@ func main() {
 	}()
 
 	go func() {
-		fmt.Printf("Billing service running at http://localhost:%s\n", port)
+		slog.Info("billing service starting", "addr", ":"+port)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -99,11 +104,13 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	fmt.Println("\nShutting down...")
+	slog.Info("shutting down")
 	cleanupCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatalf("shutdown error: %v", err)
+		slog.Error("shutdown error", "error", err)
+		os.Exit(1)
 	}
+
 }

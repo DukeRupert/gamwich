@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +14,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/license"
+	"github.com/dukerupert/gamwich/internal/logging"
 	"github.com/dukerupert/gamwich/internal/push"
 	"github.com/dukerupert/gamwich/internal/server"
 	"github.com/dukerupert/gamwich/internal/store"
@@ -21,6 +22,8 @@ import (
 )
 
 func main() {
+	logger := logging.Setup(os.Getenv("GAMWICH_LOG_LEVEL"))
+
 	port := os.Getenv("GAMWICH_PORT")
 	if port == "" {
 		port = "8080"
@@ -33,7 +36,8 @@ func main() {
 
 	db, err := database.Open(dbPath)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -124,18 +128,18 @@ func main() {
 	if pushCfg.VAPIDPublicKey == "" || pushCfg.VAPIDPrivateKey == "" {
 		pub, priv, err := push.GenerateVAPIDKeys()
 		if err != nil {
-			log.Printf("push: failed to generate VAPID keys: %v", err)
+			slog.Error("generate VAPID keys", "error", err)
 		} else {
 			pushCfg.VAPIDPublicKey = pub
 			pushCfg.VAPIDPrivateKey = priv
 			// Persist to DB so keys survive restarts without env vars
 			settingsStore.Set("vapid_public_key", pub)
 			settingsStore.Set("vapid_private_key", priv)
-			log.Println("push: auto-generated and persisted VAPID keys to database")
+			slog.Info("auto-generated and persisted VAPID keys")
 		}
 	}
 
-	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port, backupCfg, pushCfg)
+	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port, backupCfg, pushCfg, logger)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -155,7 +159,7 @@ func main() {
 	defer tunnelCancel()
 	if licenseClient.HasFeature("tunnel") {
 		if err := srv.TunnelManager().Start(tunnelCtx); err != nil {
-			log.Printf("tunnel start: %v", err)
+			slog.Error("tunnel start", "error", err)
 		}
 	}
 
@@ -183,20 +187,20 @@ func main() {
 			select {
 			case <-ticker.C:
 				if n, err := srv.SessionStore().DeleteExpired(); err != nil {
-					log.Printf("cleanup expired sessions: %v", err)
+					slog.Error("cleanup expired sessions", "error", err)
 				} else if n > 0 {
-					log.Printf("cleaned up %d expired sessions", n)
+					slog.Info("cleaned up expired sessions", "count", n)
 				}
 				if n, err := srv.MagicLinkStore().DeleteExpired(); err != nil {
-					log.Printf("cleanup expired magic links: %v", err)
+					slog.Error("cleanup expired magic links", "error", err)
 				} else if n > 0 {
-					log.Printf("cleaned up %d expired magic links", n)
+					slog.Info("cleaned up expired magic links", "count", n)
 				}
 				srv.RateLimiter().Cleanup()
 				// Clean up old sent_notifications (older than 7 days)
 				if ps := srv.PushStore(); ps != nil {
 					if err := ps.CleanupSent(time.Now().UTC().AddDate(0, 0, -7)); err != nil {
-						log.Printf("cleanup sent notifications: %v", err)
+						slog.Error("cleanup sent notifications", "error", err)
 					}
 				}
 			case <-cleanupCtx.Done():
@@ -206,9 +210,10 @@ func main() {
 	}()
 
 	go func() {
-		fmt.Printf("Gamwich running at http://localhost:%s\n", port)
+		slog.Info("server starting", "addr", ":"+port)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -216,7 +221,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	fmt.Println("\nShutting down...")
+	slog.Info("shutting down")
 	backupCancel()
 	srv.BackupManager().Stop()
 	tunnelCancel()
@@ -229,6 +234,8 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatalf("shutdown error: %v", err)
+		slog.Error("shutdown error", "error", err)
+		os.Exit(1)
 	}
+
 }

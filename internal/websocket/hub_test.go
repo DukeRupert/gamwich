@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func mockClient(hub *Hub) *Client {
 }
 
 func TestRegisterUnregister(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 
 	c1 := mockClient(hub)
 	c2 := mockClient(hub)
@@ -43,7 +44,7 @@ func TestRegisterUnregister(t *testing.T) {
 }
 
 func TestDoubleUnregister(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 	c := mockClient(hub)
 	hub.Register(c)
 	hub.Unregister(c)
@@ -56,7 +57,7 @@ func TestDoubleUnregister(t *testing.T) {
 }
 
 func TestBroadcast(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 
 	c1 := mockClient(hub)
 	c2 := mockClient(hub)
@@ -93,14 +94,14 @@ func TestBroadcast(t *testing.T) {
 }
 
 func TestBroadcastEmptyHub(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 	// Should not panic
 	msg := NewMessage("chore", "completed", 1, nil)
 	hub.Broadcast(msg)
 }
 
 func TestBroadcastFullBuffer(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 
 	c := mockClient(hub)
 	hub.Register(c)
@@ -148,7 +149,7 @@ func TestNewMessage(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(slog.Default())
 	var wg sync.WaitGroup
 
 	// Spawn goroutines that register, broadcast, and unregister concurrently

@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,10 +16,11 @@ type RewardHandler struct {
 	rewardStore *store.RewardStore
 	memberStore *store.FamilyMemberStore
 	hub         *websocket.Hub
+	logger      *slog.Logger
 }
 
-func NewRewardHandler(rs *store.RewardStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *RewardHandler {
-	return &RewardHandler{rewardStore: rs, memberStore: ms, hub: hub}
+func NewRewardHandler(rs *store.RewardStore, ms *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *RewardHandler {
+	return &RewardHandler{rewardStore: rs, memberStore: ms, hub: hub, logger: logger}
 }
 
 func (h *RewardHandler) broadcast(msg websocket.Message) {
@@ -54,7 +55,7 @@ func (h *RewardHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	reward, err := h.rewardStore.Create(req.Title, req.Description, req.PointCost, req.Active)
 	if err != nil {
-		log.Printf("failed to create reward: %v", err)
+		h.logger.Error("create reward", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create reward"})
 		return
 	}
@@ -191,7 +192,7 @@ func (h *RewardHandler) Redeem(w http.ResponseWriter, r *http.Request) {
 
 	redemption, err := h.rewardStore.Redeem(id, req.RedeemedBy, reward.PointCost)
 	if err != nil {
-		log.Printf("failed to redeem reward: %v", err)
+		h.logger.Error("redeem reward", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to redeem reward"})
 		return
 	}

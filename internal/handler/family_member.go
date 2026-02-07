@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -17,12 +17,13 @@ import (
 var hexColorRegexp = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type FamilyMemberHandler struct {
-	store *store.FamilyMemberStore
-	hub   *websocket.Hub
+	store  *store.FamilyMemberStore
+	hub    *websocket.Hub
+	logger *slog.Logger
 }
 
-func NewFamilyMemberHandler(s *store.FamilyMemberStore, hub *websocket.Hub) *FamilyMemberHandler {
-	return &FamilyMemberHandler{store: s, hub: hub}
+func NewFamilyMemberHandler(s *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *FamilyMemberHandler {
+	return &FamilyMemberHandler{store: s, hub: hub, logger: logger}
 }
 
 func (h *FamilyMemberHandler) broadcast(msg websocket.Message) {
@@ -84,7 +85,7 @@ func (h *FamilyMemberHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	member, err := h.store.Create(req.Name, req.Color, req.AvatarEmoji)
 	if err != nil {
-		log.Printf("failed to create family member: %v", err)
+		h.logger.Error("create family member", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create family member"})
 		return
 	}

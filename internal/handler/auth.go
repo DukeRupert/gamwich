@@ -3,7 +3,7 @@ package handler
 import (
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +23,7 @@ type AuthHandler struct {
 	emailClient    *email.Client
 	baseURL        string
 	templates      *template.Template
+	logger         *slog.Logger
 }
 
 func NewAuthHandler(
@@ -32,6 +33,7 @@ func NewAuthHandler(
 	mls *store.MagicLinkStore,
 	ec *email.Client,
 	baseURL string,
+	logger *slog.Logger,
 ) *AuthHandler {
 	tmpl := template.Must(template.ParseGlob("web/templates/auth_*.html"))
 	return &AuthHandler{
@@ -42,6 +44,7 @@ func NewAuthHandler(
 		emailClient:    ec,
 		baseURL:        baseURL,
 		templates:      tmpl,
+		logger:         logger,
 	}
 }
 
@@ -65,7 +68,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.userStore.GetByEmail(emailAddr)
 	if err != nil {
-		log.Printf("login lookup error: %v", err)
+		h.logger.Error("login lookup", "error", err)
 		return
 	}
 	if user == nil {
@@ -75,18 +78,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Find user's households to determine which one to use
 	households, err := h.householdStore.ListHouseholdsForUser(user.ID)
 	if err != nil || len(households) == 0 {
-		log.Printf("login households error: %v", err)
+		h.logger.Error("login households", "error", err)
 		return
 	}
 
 	ml, err := h.magicLinkStore.Create(emailAddr, "login", nil)
 	if err != nil {
-		log.Printf("create magic link error: %v", err)
+		h.logger.Error("create magic link", "error", err)
 		return
 	}
 
 	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "login", ""); err != nil {
-		log.Printf("send magic link error: %v", err)
+		h.logger.Error("send magic link", "error", err)
 	}
 }
 
@@ -106,7 +109,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Check if user already exists
 	existing, err := h.userStore.GetByEmail(emailAddr)
 	if err != nil {
-		log.Printf("register lookup error: %v", err)
+		h.logger.Error("register lookup", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -121,7 +124,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Create household
 	household, err := h.householdStore.Create(householdName)
 	if err != nil {
-		log.Printf("create household error: %v", err)
+		h.logger.Error("create household", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -129,21 +132,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Create user
 	user, err := h.userStore.Create(emailAddr, "")
 	if err != nil {
-		log.Printf("create user error: %v", err)
+		h.logger.Error("create user", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Add user as admin
 	if _, err := h.householdStore.AddMember(household.ID, user.ID, "admin"); err != nil {
-		log.Printf("add member error: %v", err)
+		h.logger.Error("add member", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Seed defaults for the new household
 	if err := h.householdStore.SeedDefaults(household.ID); err != nil {
-		log.Printf("seed defaults error: %v", err)
+		h.logger.Error("seed defaults", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -151,14 +154,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Create magic link
 	ml, err := h.magicLinkStore.Create(emailAddr, "register", &household.ID)
 	if err != nil {
-		log.Printf("create magic link error: %v", err)
+		h.logger.Error("create magic link", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Send email
 	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "register", householdName); err != nil {
-		log.Printf("send magic link error: %v", err)
+		h.logger.Error("send magic link", "error", err)
 	}
 
 	h.templates.ExecuteTemplate(w, "auth_check_email.html", map[string]string{
@@ -175,7 +178,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	ml, err := h.magicLinkStore.GetByToken(token)
 	if err != nil {
-		log.Printf("verify magic link error: %v", err)
+		h.logger.Error("verify magic link", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -186,7 +189,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	// Mark the link as used
 	if err := h.magicLinkStore.MarkUsed(ml.ID); err != nil {
-		log.Printf("mark used error: %v", err)
+		h.logger.Error("mark used", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -194,7 +197,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Find the user
 	user, err := h.userStore.GetByEmail(ml.Email)
 	if err != nil || user == nil {
-		log.Printf("verify user lookup error: %v", err)
+		h.logger.Error("verify user lookup", "error", err)
 		http.Error(w, "User not found", http.StatusBadRequest)
 		return
 	}
@@ -202,7 +205,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Determine household
 	households, err := h.householdStore.ListHouseholdsForUser(user.ID)
 	if err != nil || len(households) == 0 {
-		log.Printf("verify households error: %v", err)
+		h.logger.Error("verify households", "error", err)
 		http.Error(w, "No household found", http.StatusBadRequest)
 		return
 	}
@@ -216,7 +219,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	sess, err := h.sessionStore.Create(user.ID, householdID)
 	if err != nil {
-		log.Printf("create session error: %v", err)
+		h.logger.Error("create session", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -249,7 +252,7 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 
 	ml, err := h.magicLinkStore.GetByToken(token)
 	if err != nil {
-		log.Printf("invite accept error: %v", err)
+		h.logger.Error("invite accept", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -260,7 +263,7 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 
 	// Mark as used
 	if err := h.magicLinkStore.MarkUsed(ml.ID); err != nil {
-		log.Printf("mark used error: %v", err)
+		h.logger.Error("mark used", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -268,14 +271,14 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 	// Find or create user
 	user, err := h.userStore.GetByEmail(ml.Email)
 	if err != nil {
-		log.Printf("invite user lookup error: %v", err)
+		h.logger.Error("invite user lookup", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if user == nil {
 		user, err = h.userStore.Create(ml.Email, "")
 		if err != nil {
-			log.Printf("create invite user error: %v", err)
+			h.logger.Error("create invite user", "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
@@ -286,7 +289,7 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 		// Check if already a member
 		existing, _ := h.householdStore.GetMember(*ml.HouseholdID, user.ID)
 		if existing == nil {
-			log.Printf("add invite member error: %v", err)
+			h.logger.Error("add invite member", "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
@@ -295,7 +298,7 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	sess, err := h.sessionStore.Create(user.ID, *ml.HouseholdID)
 	if err != nil {
-		log.Printf("create invite session error: %v", err)
+		h.logger.Error("create invite session", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -339,13 +342,13 @@ func (h *AuthHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	ml, err := h.magicLinkStore.Create(emailAddr, "invite", &ac.HouseholdID)
 	if err != nil {
-		log.Printf("create invite link error: %v", err)
+		h.logger.Error("create invite link", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.emailClient.SendMagicLink(emailAddr, ml.Token, "invite", household.Name); err != nil {
-		log.Printf("send invite email error: %v", err)
+		h.logger.Error("send invite email", "error", err)
 		http.Error(w, "Failed to send invitation", http.StatusInternalServerError)
 		return
 	}
@@ -389,7 +392,7 @@ func (h *AuthHandler) HouseholdsPage(w http.ResponseWriter, r *http.Request) {
 
 	households, err := h.householdStore.ListHouseholdsForUser(ac.UserID)
 	if err != nil {
-		log.Printf("list households error: %v", err)
+		h.logger.Error("list households", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -429,7 +432,7 @@ func (h *AuthHandler) SwitchHousehold(w http.ResponseWriter, r *http.Request) {
 
 	// Update session
 	if err := h.sessionStore.UpdateHouseholdID(ac.SessionID, householdID); err != nil {
-		log.Printf("switch household error: %v", err)
+		h.logger.Error("switch household", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}

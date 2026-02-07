@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -36,7 +37,7 @@ type Config struct {
 	TemplatesDir string
 }
 
-func New(db *sql.DB, cfg Config) *Server {
+func New(db *sql.DB, cfg Config, logger *slog.Logger) *Server {
 	accountStore := store.NewAccountStore(db)
 	subscriptionStore := store.NewSubscriptionStore(db)
 	licenseKeyStore := store.NewLicenseKeyStore(db)
@@ -50,7 +51,7 @@ func New(db *sql.DB, cfg Config) *Server {
 	var webhookH *handler.WebhookHandler
 	var checkoutH *handler.CheckoutHandler
 	if stripeClient != nil {
-		webhookH = handler.NewWebhookHandler(stripeClient, accountStore, subscriptionStore, licenseKeyStore)
+		webhookH = handler.NewWebhookHandler(stripeClient, accountStore, subscriptionStore, licenseKeyStore, logger.With("component", "webhook"))
 		checkoutH = handler.NewCheckoutHandler(stripeClient, accountStore)
 	}
 
@@ -61,8 +62,8 @@ func New(db *sql.DB, cfg Config) *Server {
 	}
 	tmpl := template.Must(template.ParseGlob(tmplDir + "/*.html"))
 
-	authH := handler.NewAuthHandler(accountStore, sessionStore, cfg.EmailClient, cfg.BaseURL, tmpl)
-	accountH := handler.NewAccountHandler(accountStore, subscriptionStore, licenseKeyStore, tmpl, cfg.BaseURL)
+	authH := handler.NewAuthHandler(accountStore, sessionStore, cfg.EmailClient, cfg.BaseURL, tmpl, logger.With("component", "auth"))
+	accountH := handler.NewAccountHandler(accountStore, subscriptionStore, licenseKeyStore, tmpl, cfg.BaseURL, logger.With("component", "account"))
 
 	return &Server{
 		db:                db,

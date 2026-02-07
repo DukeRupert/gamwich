@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"log"
 	"net/http"
 
 	ws "github.com/coder/websocket"
@@ -15,7 +14,7 @@ func HandleWebSocket(hub *Hub) http.HandlerFunc {
 			InsecureSkipVerify: true, // Allow connections from any origin (household LAN)
 		})
 		if err != nil {
-			log.Printf("websocket: accept: %v", err)
+			hub.logger.Error("websocket accept", "error", err)
 			return
 		}
 

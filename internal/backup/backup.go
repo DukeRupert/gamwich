@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -75,6 +75,7 @@ type Manager struct {
 	cfg      Config
 	status   Status
 	callback StatusCallback
+	logger   *slog.Logger
 
 	db            *sql.DB
 	backupStore   *store.BackupStore
@@ -88,13 +89,14 @@ type Manager struct {
 }
 
 // NewManager creates a new backup manager.
-func NewManager(cfg Config, db *sql.DB, bs *store.BackupStore, ss *store.SettingsStore, callback StatusCallback) *Manager {
+func NewManager(cfg Config, db *sql.DB, bs *store.BackupStore, ss *store.SettingsStore, callback StatusCallback, logger *slog.Logger) *Manager {
 	m := &Manager{
 		cfg:           cfg,
 		db:            db,
 		backupStore:   bs,
 		settingsStore: ss,
 		callback:      callback,
+		logger:        logger,
 		cachedCreds:   make(map[int64]*cachedCreds),
 		status:        Status{State: StateDisabled},
 	}
@@ -233,12 +235,12 @@ func (m *Manager) checkSchedule(ctx context.Context) {
 	m.mu.RUnlock()
 
 	if !hasCached {
-		log.Printf("backup: skipping scheduled backup for household %d - no cached credentials", householdID)
+		m.logger.Warn("skipping scheduled backup, no cached credentials", "household_id", householdID)
 		return
 	}
 
 	if _, err := m.runBackup(ctx, householdID, creds.passphrase, creds.salt); err != nil {
-		log.Printf("backup: scheduled backup failed: %v", err)
+		m.logger.Error("scheduled backup failed", "error", err)
 	}
 
 	retentionDays, _ := strconv.Atoi(settings["backup_retention_days"])
@@ -246,7 +248,7 @@ func (m *Manager) checkSchedule(ctx context.Context) {
 		retentionDays = 30
 	}
 	if err := m.Cleanup(ctx, householdID, retentionDays); err != nil {
-		log.Printf("backup: cleanup failed: %v", err)
+		m.logger.Error("backup cleanup failed", "error", err)
 	}
 }
 
@@ -433,7 +435,7 @@ func (m *Manager) Restore(ctx context.Context, backupID, householdID int64, pass
 	os.Remove(m.cfg.DBPath + "-wal")
 	os.Remove(m.cfg.DBPath + "-shm")
 
-	log.Printf("backup: restore complete, exiting for restart")
+	m.logger.Info("restore complete, exiting for restart")
 	os.Exit(0)
 	return nil // unreachable
 }
@@ -490,7 +492,7 @@ func (m *Manager) Cleanup(ctx context.Context, householdID int64, retentionDays 
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 		}); err != nil {
-			log.Printf("backup: failed to delete S3 object %s: %v", key, err)
+			m.logger.Error("delete S3 object failed", "key", key, "error", err)
 		}
 	}
 

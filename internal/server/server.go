@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -40,10 +41,11 @@ type Server struct {
 	backupManager   *backup.Manager
 	pushService     *push.Service
 	pushScheduler   *push.Scheduler
+	logger          *slog.Logger
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string, backupCfg backup.Config, pushCfg push.Config) *Server {
-	hub := ws.NewHub()
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string, backupCfg backup.Config, pushCfg push.Config, logger *slog.Logger) *Server {
+	hub := ws.NewHub(logger.With("component", "websocket"))
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
 	eventStore := store.NewEventStore(db)
@@ -59,6 +61,10 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 	sessionStore := store.NewSessionStore(db)
 	magicLinkStore := store.NewMagicLinkStore(db)
 
+	backupLogger := logger.With("component", "backup")
+	tunnelLogger := logger.With("component", "tunnel")
+	pushLogger := logger.With("component", "push")
+
 	// Backup store + manager
 	backupStore := store.NewBackupStore(db)
 	backupMgr := backup.NewManager(backupCfg, db, backupStore, settingsStore, func(s backup.Status) {
@@ -71,7 +77,7 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 				"error":       s.Error,
 			},
 		})
-	})
+	}, backupLogger)
 
 	// Tunnel manager
 	tunnelCfg := tunnel.Config{
@@ -91,7 +97,7 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 				"error":     s.Error,
 			},
 		})
-	})
+	}, tunnelLogger)
 
 	// Push notification service + scheduler
 	pushSt := store.NewPushStore(db)
@@ -100,22 +106,22 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 	var pushH *handler.PushHandler
 	if pushCfg.VAPIDPublicKey != "" && pushCfg.VAPIDPrivateKey != "" {
 		pushSvc = push.NewService(pushCfg.VAPIDPublicKey, pushCfg.VAPIDPrivateKey)
-		pushSched = push.NewScheduler(pushSvc, pushSt, eventStore, choreStore, familyMemberStore)
-		pushH = handler.NewPushHandler(pushSt, pushSvc)
+		pushSched = push.NewScheduler(pushSvc, pushSt, eventStore, choreStore, familyMemberStore, pushLogger)
+		pushH = handler.NewPushHandler(pushSt, pushSvc, logger.With("component", "push_handler"))
 	}
 
 	return &Server{
 		db:              db,
 		hub:             hub,
-		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore, hub),
-		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub),
-		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub),
-		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
-		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
-		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
+		familyMemberH:   handler.NewFamilyMemberHandler(familyMemberStore, hub, logger.With("component", "family_member")),
+		calendarEventH:  handler.NewCalendarEventHandler(eventStore, familyMemberStore, hub, logger.With("component", "calendar")),
+		choreH:          handler.NewChoreHandler(choreStore, familyMemberStore, hub, logger.With("component", "chore")),
+		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub, logger.With("component", "grocery")),
+		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub, logger.With("component", "note")),
+		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub, logger.With("component", "reward")),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, backupMgr, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore, pushSt, pushSvc, pushSched),
-		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore, pushSt, pushSvc, pushSched, logger.With("component", "template")),
+		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL, logger.With("component", "auth")),
 		pushH:           pushH,
 		sessionStore:    sessionStore,
 		householdStore:  householdStore,
@@ -126,6 +132,7 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		backupManager:   backupMgr,
 		pushService:     pushSvc,
 		pushScheduler:   pushSched,
+		logger:          logger,
 	}
 }
 
@@ -189,7 +196,8 @@ func (s *Server) Router() http.Handler {
 	authMiddleware := middleware.RequireAuth(s.sessionStore, s.householdStore)
 	outerMux.Handle("/", authMiddleware(protectedMux))
 
-	return outerMux
+	// Apply request logging middleware
+	return middleware.RequestLogger(s.logger.With("component", "http"))(outerMux)
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {

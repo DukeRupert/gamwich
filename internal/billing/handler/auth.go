@@ -2,7 +2,7 @@ package handler
 
 import (
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -18,6 +18,7 @@ type AuthHandler struct {
 	emailClient  *email.Client
 	baseURL      string
 	templates    *template.Template
+	logger       *slog.Logger
 }
 
 func NewAuthHandler(
@@ -26,6 +27,7 @@ func NewAuthHandler(
 	ec *email.Client,
 	baseURL string,
 	tmpl *template.Template,
+	logger *slog.Logger,
 ) *AuthHandler {
 	return &AuthHandler{
 		accountStore: as,
@@ -33,6 +35,7 @@ func NewAuthHandler(
 		emailClient:  ec,
 		baseURL:      baseURL,
 		templates:    tmpl,
+		logger:       logger,
 	}
 }
 
@@ -57,12 +60,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Find or create account
 	account, err := h.accountStore.GetByEmail(addr)
 	if err != nil {
-		log.Printf("billing auth: get account: %v", err)
+		h.logger.Error("get account", "error", err)
 	}
 	if account == nil {
 		account, err = h.accountStore.Create(addr)
 		if err != nil {
-			log.Printf("billing auth: create account: %v", err)
+			h.logger.Error("create account", "error", err)
 			h.render(w, "login.html", map[string]any{"Error": "Unable to process request"})
 			return
 		}
@@ -71,7 +74,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Create a session directly and send magic link with session token
 	sess, err := h.sessionStore.Create(account.ID)
 	if err != nil {
-		log.Printf("billing auth: create session: %v", err)
+		h.logger.Error("create session", "error", err)
 		h.render(w, "login.html", map[string]any{"Error": "Unable to process request"})
 		return
 	}
@@ -79,10 +82,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Send magic link
 	if h.emailClient != nil && h.emailClient.Configured() {
 		if err := h.emailClient.SendMagicLink(addr, sess.Token, "login", "Gamwich"); err != nil {
-			log.Printf("billing auth: send magic link: %v", err)
+			h.logger.Error("send magic link", "error", err)
 		}
 	} else {
-		log.Printf("billing auth: magic link token for %s: %s", addr, sess.Token)
+		h.logger.Info("magic link token generated", "email", addr, "token", sess.Token)
 	}
 
 	// Always show check-email to prevent user enumeration
@@ -145,7 +148,7 @@ func (h *AuthHandler) render(w http.ResponseWriter, name string, data any) {
 		m["Year"] = time.Now().Year()
 	}
 	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("billing template error: %v", err)
+		h.logger.Error("template render", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -48,9 +48,10 @@ type TemplateHandler struct {
 	pushService    *push.Service
 	pushScheduler  *push.Scheduler
 	templates      *template.Template
+	logger         *slog.Logger
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler, logger *slog.Logger) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add":         func(a, b int) int { return a + b },
 		"formatBytes": formatBytes,
@@ -81,6 +82,7 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		pushService:   pushSvc,
 		pushScheduler: pushSched,
 		templates:     tmpl,
+		logger:        logger,
 	}
 }
 
@@ -182,7 +184,7 @@ func (h *TemplateHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.renderSection("dashboard-content", data)
 	if err != nil {
-		log.Printf("render dashboard content: %v", err)
+		h.logger.Error("render dashboard content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -203,7 +205,7 @@ func (h *TemplateHandler) SectionPage(section string) http.HandlerFunc {
 
 		content, err := h.renderSection(templateName, data)
 		if err != nil {
-			log.Printf("render %s content: %v", section, err)
+			h.logger.Error("render section content", "section", section, "error", err)
 			http.Error(w, "template error", http.StatusInternalServerError)
 			return
 		}
@@ -252,7 +254,7 @@ func (h *TemplateHandler) CalendarPage(w http.ResponseWriter, r *http.Request) {
 
 	viewContent, err := h.buildCalendarViewContent(view, date)
 	if err != nil {
-		log.Printf("build calendar view: %v", err)
+		h.logger.Error("build calendar view", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -265,7 +267,7 @@ func (h *TemplateHandler) CalendarPage(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.renderSection("calendar-content", calendarData)
 	if err != nil {
-		log.Printf("render calendar content: %v", err)
+		h.logger.Error("render calendar content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -284,7 +286,7 @@ func (h *TemplateHandler) CalendarPartial(w http.ResponseWriter, r *http.Request
 
 	viewContent, err := h.buildCalendarViewContent(view, date)
 	if err != nil {
-		log.Printf("build calendar view: %v", err)
+		h.logger.Error("build calendar view", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -301,7 +303,7 @@ func (h *TemplateHandler) CalendarDayPartial(w http.ResponseWriter, r *http.Requ
 	date := h.parseCalendarDate(r)
 	data, err := h.buildDayViewData(date)
 	if err != nil {
-		log.Printf("build day view: %v", err)
+		h.logger.Error("build day view", "error", err)
 		http.Error(w, "failed to load events", http.StatusInternalServerError)
 		return
 	}
@@ -313,7 +315,7 @@ func (h *TemplateHandler) CalendarWeekPartial(w http.ResponseWriter, r *http.Req
 	date := h.parseCalendarDate(r)
 	data, err := h.buildWeekViewData(date)
 	if err != nil {
-		log.Printf("build week view: %v", err)
+		h.logger.Error("build week view", "error", err)
 		http.Error(w, "failed to load events", http.StatusInternalServerError)
 		return
 	}
@@ -432,7 +434,7 @@ func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Req
 
 	event, err := h.eventStore.CreateWithRecurrence(title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule)
 	if err != nil {
-		log.Printf("create event: %v", err)
+		h.logger.Error("create event", "error", err)
 		http.Error(w, "failed to create event", http.StatusInternalServerError)
 		return
 	}
@@ -440,7 +442,7 @@ func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Req
 	if rmStr := r.FormValue("reminder_minutes"); rmStr != "" {
 		if rm, err := strconv.Atoi(rmStr); err == nil {
 			if err := h.eventStore.SetReminderMinutes(event.ID, &rm); err != nil {
-				log.Printf("set reminder: %v", err)
+				h.logger.Error("set reminder", "error", err)
 			}
 		}
 	}
@@ -601,7 +603,7 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 			}
 		}
 		if _, err := h.eventStore.CreateException(parentID, origStart, title, description, startTime, endTime, allDay, familyMemberID, location, false); err != nil {
-			log.Printf("create exception: %v", err)
+			h.logger.Error("create exception", "error", err)
 			http.Error(w, "failed to create exception", http.StatusInternalServerError)
 			return
 		}
@@ -613,10 +615,10 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 			parentID = id
 		}
 		if err := h.eventStore.DeleteExceptions(parentID); err != nil {
-			log.Printf("delete exceptions: %v", err)
+			h.logger.Error("delete exceptions", "error", err)
 		}
 		if _, err := h.eventStore.UpdateWithRecurrence(parentID, title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
-			log.Printf("update event: %v", err)
+			h.logger.Error("update event", "error", err)
 			http.Error(w, "failed to update event", http.StatusInternalServerError)
 			return
 		}
@@ -624,7 +626,7 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 	default:
 		// Non-recurring or simple update
 		if _, err := h.eventStore.UpdateWithRecurrence(id, title, description, startTime, endTime, allDay, familyMemberID, location, recurrenceRule); err != nil {
-			log.Printf("update event: %v", err)
+			h.logger.Error("update event", "error", err)
 			http.Error(w, "failed to update event", http.StatusInternalServerError)
 			return
 		}
@@ -634,13 +636,13 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 	if rmStr := r.FormValue("reminder_minutes"); rmStr != "" {
 		if rm, err := strconv.Atoi(rmStr); err == nil {
 			if err := h.eventStore.SetReminderMinutes(id, &rm); err != nil {
-				log.Printf("set reminder: %v", err)
+				h.logger.Error("set reminder", "error", err)
 			}
 		}
 	} else {
 		// Clear reminder if empty
 		if err := h.eventStore.SetReminderMinutes(id, nil); err != nil {
-			log.Printf("clear reminder: %v", err)
+			h.logger.Error("clear reminder", "error", err)
 		}
 	}
 
@@ -701,7 +703,7 @@ func (h *TemplateHandler) CalendarEventDeleteForm(w http.ResponseWriter, r *http
 			}
 		}
 		if _, err := h.eventStore.CreateException(parentID, origStart, parent.Title, parent.Description, origStart, origStart.Add(parent.EndTime.Sub(parent.StartTime)), parent.AllDay, parent.FamilyMemberID, parent.Location, true); err != nil {
-			log.Printf("create cancelled exception: %v", err)
+			h.logger.Error("create cancelled exception", "error", err)
 			http.Error(w, "failed to delete occurrence", http.StatusInternalServerError)
 			return
 		}
@@ -786,14 +788,14 @@ func (h *TemplateHandler) ChoresPage(w http.ResponseWriter, r *http.Request) {
 
 	choreData, err := h.buildChoreListData("all", 0)
 	if err != nil {
-		log.Printf("build chore list: %v", err)
+		h.logger.Error("build chore list", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
 
 	content, err := h.renderSection("chores-content", choreData)
 	if err != nil {
-		log.Printf("render chores content: %v", err)
+		h.logger.Error("render chores content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -806,7 +808,7 @@ func (h *TemplateHandler) ChoresPage(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) ChoresPartial(w http.ResponseWriter, r *http.Request) {
 	choreData, err := h.buildChoreListData("all", 0)
 	if err != nil {
-		log.Printf("build chore list: %v", err)
+		h.logger.Error("build chore list", "error", err)
 		http.Error(w, "failed to load chores", http.StatusInternalServerError)
 		return
 	}
@@ -927,7 +929,7 @@ func (h *TemplateHandler) ChoreCreate(w http.ResponseWriter, r *http.Request) {
 
 	newChore, err := h.choreStore.Create(title, description, areaID, points, recurrenceRule, assignedTo)
 	if err != nil {
-		log.Printf("create chore: %v", err)
+		h.logger.Error("create chore", "error", err)
 		http.Error(w, "failed to create chore", http.StatusInternalServerError)
 		return
 	}
@@ -985,7 +987,7 @@ func (h *TemplateHandler) ChoreUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.choreStore.Update(id, title, description, areaID, points, recurrenceRule, assignedTo); err != nil {
-		log.Printf("update chore: %v", err)
+		h.logger.Error("update chore", "error", err)
 		http.Error(w, "failed to update chore", http.StatusInternalServerError)
 		return
 	}
@@ -1051,7 +1053,7 @@ func (h *TemplateHandler) ChoreComplete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, err := h.choreStore.CreateCompletion(id, completedBy, choreObj.Points); err != nil {
-		log.Printf("complete chore: %v", err)
+		h.logger.Error("complete chore", "error", err)
 		http.Error(w, "failed to complete chore", http.StatusInternalServerError)
 		return
 	}
@@ -1115,14 +1117,14 @@ func (h *TemplateHandler) ChoreManagePage(w http.ResponseWriter, r *http.Request
 
 	manageData, err := h.buildChoreManageData()
 	if err != nil {
-		log.Printf("build chore manage data: %v", err)
+		h.logger.Error("build chore manage data", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
 
 	content, err := h.renderSection("chore-manage-content", manageData)
 	if err != nil {
-		log.Printf("render chore manage content: %v", err)
+		h.logger.Error("render chore manage content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -1166,7 +1168,7 @@ func (h *TemplateHandler) ChoreAreaCreate(w http.ResponseWriter, r *http.Request
 
 	area, err := h.choreStore.CreateArea(name, 0)
 	if err != nil {
-		log.Printf("create area: %v", err)
+		h.logger.Error("create area", "error", err)
 		http.Error(w, "failed to create area", http.StatusInternalServerError)
 		return
 	}
@@ -1545,14 +1547,14 @@ func (h *TemplateHandler) GroceryPage(w http.ResponseWriter, r *http.Request) {
 
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
-		log.Printf("build grocery list: %v", err)
+		h.logger.Error("build grocery list", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
 
 	content, err := h.renderSection("grocery-content", groceryData)
 	if err != nil {
-		log.Printf("render grocery content: %v", err)
+		h.logger.Error("render grocery content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -1565,7 +1567,7 @@ func (h *TemplateHandler) GroceryPage(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) GroceryPartial(w http.ResponseWriter, r *http.Request) {
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
-		log.Printf("build grocery list: %v", err)
+		h.logger.Error("build grocery list", "error", err)
 		http.Error(w, "failed to load grocery data", http.StatusInternalServerError)
 		return
 	}
@@ -1611,7 +1613,7 @@ func (h *TemplateHandler) GroceryItemAdd(w http.ResponseWriter, r *http.Request)
 
 	item, err := h.groceryStore.CreateItem(list.ID, name, "", "", "", cat, addedBy)
 	if err != nil {
-		log.Printf("create grocery item: %v", err)
+		h.logger.Error("create grocery item", "error", err)
 		http.Error(w, "failed to create item", http.StatusInternalServerError)
 		return
 	}
@@ -1648,7 +1650,7 @@ func (h *TemplateHandler) GroceryItemToggle(w http.ResponseWriter, r *http.Reque
 	}
 
 	if _, err := h.groceryStore.ToggleChecked(id, checkedBy); err != nil {
-		log.Printf("toggle grocery item: %v", err)
+		h.logger.Error("toggle grocery item", "error", err)
 		http.Error(w, "failed to toggle item", http.StatusInternalServerError)
 		return
 	}
@@ -1768,7 +1770,7 @@ func (h *TemplateHandler) GroceryItemUpdate(w http.ResponseWriter, r *http.Reque
 	}
 
 	if _, err := h.groceryStore.UpdateItem(id, name, quantity, unit, notes, category); err != nil {
-		log.Printf("update grocery item: %v", err)
+		h.logger.Error("update grocery item", "error", err)
 		http.Error(w, "failed to update item", http.StatusInternalServerError)
 		return
 	}
@@ -1898,7 +1900,7 @@ func (h *TemplateHandler) NotesPage(w http.ResponseWriter, r *http.Request) {
 
 	noteData, err := h.buildNoteListData()
 	if err != nil {
-		log.Printf("build note list: %v", err)
+		h.logger.Error("build note list", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -1906,7 +1908,7 @@ func (h *TemplateHandler) NotesPage(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.renderSection("notes-content", noteData)
 	if err != nil {
-		log.Printf("render notes content: %v", err)
+		h.logger.Error("render notes content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -1919,7 +1921,7 @@ func (h *TemplateHandler) NotesPage(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) NotesPartial(w http.ResponseWriter, r *http.Request) {
 	noteData, err := h.buildNoteListData()
 	if err != nil {
-		log.Printf("build note list: %v", err)
+		h.logger.Error("build note list", "error", err)
 		http.Error(w, "failed to load notes data", http.StatusInternalServerError)
 		return
 	}
@@ -2010,7 +2012,7 @@ func (h *TemplateHandler) NoteCreate(w http.ResponseWriter, r *http.Request) {
 
 	note, err := h.noteStore.Create(title, body, authorID, pinned, priority, expiresAt)
 	if err != nil {
-		log.Printf("create note: %v", err)
+		h.logger.Error("create note", "error", err)
 		http.Error(w, "failed to create note", http.StatusInternalServerError)
 		return
 	}
@@ -2074,7 +2076,7 @@ func (h *TemplateHandler) NoteUpdate(w http.ResponseWriter, r *http.Request) {
 
 	note, err := h.noteStore.Update(id, title, body, authorID, pinned, priority, expiresAt)
 	if err != nil {
-		log.Printf("update note: %v", err)
+		h.logger.Error("update note", "error", err)
 		http.Error(w, "failed to update note", http.StatusInternalServerError)
 		return
 	}
@@ -2102,7 +2104,7 @@ func (h *TemplateHandler) NoteDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.noteStore.Delete(id); err != nil {
-		log.Printf("delete note: %v", err)
+		h.logger.Error("delete note", "error", err)
 		http.Error(w, "failed to delete note", http.StatusInternalServerError)
 		return
 	}
@@ -2200,14 +2202,14 @@ func (h *TemplateHandler) RewardsPage(w http.ResponseWriter, r *http.Request) {
 
 	rewardsData, err := h.buildRewardsData(r)
 	if err != nil {
-		log.Printf("build rewards data: %v", err)
+		h.logger.Error("build rewards data", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
 
 	content, err := h.renderSection("rewards-content", rewardsData)
 	if err != nil {
-		log.Printf("render rewards content: %v", err)
+		h.logger.Error("render rewards content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -2220,7 +2222,7 @@ func (h *TemplateHandler) RewardsPage(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) RewardsPartial(w http.ResponseWriter, r *http.Request) {
 	rewardsData, err := h.buildRewardsData(r)
 	if err != nil {
-		log.Printf("build rewards data: %v", err)
+		h.logger.Error("build rewards data", "error", err)
 		http.Error(w, "failed to load rewards data", http.StatusInternalServerError)
 		return
 	}
@@ -2275,7 +2277,7 @@ func (h *TemplateHandler) RewardRedeem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.rewardStore.Redeem(id, redeemedBy, reward.PointCost); err != nil {
-		log.Printf("redeem reward: %v", err)
+		h.logger.Error("redeem reward", "error", err)
 		http.Error(w, "failed to redeem reward", http.StatusInternalServerError)
 		return
 	}
@@ -2345,7 +2347,7 @@ func (h *TemplateHandler) RewardCreate(w http.ResponseWriter, r *http.Request) {
 
 	reward, err := h.rewardStore.Create(title, description, pointCost, active)
 	if err != nil {
-		log.Printf("create reward: %v", err)
+		h.logger.Error("create reward", "error", err)
 		http.Error(w, "failed to create reward", http.StatusInternalServerError)
 		return
 	}
@@ -2383,7 +2385,7 @@ func (h *TemplateHandler) RewardUpdate(w http.ResponseWriter, r *http.Request) {
 
 	reward, err := h.rewardStore.Update(id, title, description, pointCost, active)
 	if err != nil {
-		log.Printf("update reward: %v", err)
+		h.logger.Error("update reward", "error", err)
 		http.Error(w, "failed to update reward", http.StatusInternalServerError)
 		return
 	}
@@ -2405,7 +2407,7 @@ func (h *TemplateHandler) RewardDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.rewardStore.Delete(id); err != nil {
-		log.Printf("delete reward: %v", err)
+		h.logger.Error("delete reward", "error", err)
 		http.Error(w, "failed to delete reward", http.StatusInternalServerError)
 		return
 	}
@@ -2471,7 +2473,7 @@ func (h *TemplateHandler) SettingsPartial(w http.ResponseWriter, r *http.Request
 func (h *TemplateHandler) KioskSettingsPartial(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.settingsStore.GetKioskSettings()
 	if err != nil {
-		log.Printf("get kiosk settings: %v", err)
+		h.logger.Error("get kiosk settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2511,7 +2513,7 @@ func (h *TemplateHandler) KioskSettingsUpdate(w http.ResponseWriter, r *http.Req
 
 	for key, value := range settings {
 		if err := h.settingsStore.Set(key, value); err != nil {
-			log.Printf("set setting %q: %v", key, err)
+			h.logger.Error("set setting", "key", key, "error", err)
 			h.renderToast(w, "error", "Failed to save settings")
 			return
 		}
@@ -2521,7 +2523,7 @@ func (h *TemplateHandler) KioskSettingsUpdate(w http.ResponseWriter, r *http.Req
 
 	updated, err := h.settingsStore.GetKioskSettings()
 	if err != nil {
-		log.Printf("get kiosk settings: %v", err)
+		h.logger.Error("get kiosk settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2534,7 +2536,7 @@ func (h *TemplateHandler) KioskSettingsUpdate(w http.ResponseWriter, r *http.Req
 func (h *TemplateHandler) WeatherSettingsPartial(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.settingsStore.GetWeatherSettings()
 	if err != nil {
-		log.Printf("get weather settings: %v", err)
+		h.logger.Error("get weather settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2572,7 +2574,7 @@ func (h *TemplateHandler) WeatherSettingsUpdate(w http.ResponseWriter, r *http.R
 
 	for key, value := range settings {
 		if err := h.settingsStore.Set(key, value); err != nil {
-			log.Printf("set setting %q: %v", key, err)
+			h.logger.Error("set setting", "key", key, "error", err)
 			h.renderToast(w, "error", "Failed to save settings")
 			return
 		}
@@ -2588,7 +2590,7 @@ func (h *TemplateHandler) WeatherSettingsUpdate(w http.ResponseWriter, r *http.R
 
 	updated, err := h.settingsStore.GetWeatherSettings()
 	if err != nil {
-		log.Printf("get weather settings: %v", err)
+		h.logger.Error("get weather settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2601,7 +2603,7 @@ func (h *TemplateHandler) WeatherSettingsUpdate(w http.ResponseWriter, r *http.R
 func (h *TemplateHandler) ThemeSettingsPartial(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.settingsStore.GetThemeSettings()
 	if err != nil {
-		log.Printf("get theme settings: %v", err)
+		h.logger.Error("get theme settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2651,7 +2653,7 @@ func (h *TemplateHandler) ThemeSettingsUpdate(w http.ResponseWriter, r *http.Req
 
 	for key, value := range settings {
 		if err := h.settingsStore.Set(key, value); err != nil {
-			log.Printf("set setting %q: %v", key, err)
+			h.logger.Error("set setting", "key", key, "error", err)
 			h.renderToast(w, "error", "Failed to save settings")
 			return
 		}
@@ -2661,7 +2663,7 @@ func (h *TemplateHandler) ThemeSettingsUpdate(w http.ResponseWriter, r *http.Req
 
 	updated, err := h.settingsStore.GetThemeSettings()
 	if err != nil {
-		log.Printf("get theme settings: %v", err)
+		h.logger.Error("get theme settings", "error", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -2677,7 +2679,7 @@ func (h *TemplateHandler) NextUpcomingEventPartial(w http.ResponseWriter, r *htt
 
 	events, err := h.expandEventsForRange(now, rangeEnd)
 	if err != nil {
-		log.Printf("expand events for idle: %v", err)
+		h.logger.Error("expand events for idle", "error", err)
 		h.renderPartial(w, "idle-next-event", nil)
 		return
 	}
@@ -2814,7 +2816,7 @@ func (h *TemplateHandler) FamilyMembers(w http.ResponseWriter, r *http.Request) 
 
 	content, err := h.renderSection("family-members-content", data)
 	if err != nil {
-		log.Printf("render family members content: %v", err)
+		h.logger.Error("render family members content", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -3217,7 +3219,7 @@ func (h *TemplateHandler) expandEventsForRange(rangeStart, rangeEnd time.Time) (
 	for _, parent := range recurring {
 		rule, err := recurrence.Parse(parent.RecurrenceRule)
 		if err != nil {
-			log.Printf("skip recurring event %d: invalid rule %q: %v", parent.ID, parent.RecurrenceRule, err)
+			h.logger.Error("skip recurring event", "event_id", parent.ID, "rule", parent.RecurrenceRule, "error", err)
 			continue
 		}
 
@@ -3683,7 +3685,7 @@ func (h *TemplateHandler) S3SettingsUpdate(w http.ResponseWriter, r *http.Reques
 func (h *TemplateHandler) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("template error: %v", err)
+		h.logger.Error("template error", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -3691,7 +3693,7 @@ func (h *TemplateHandler) render(w http.ResponseWriter, name string, data any) {
 func (h *TemplateHandler) renderPartial(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("template error rendering %q: %v", name, err)
+		h.logger.Error("template render failed", "template", name, "error", err)
 		fmt.Fprintf(w, `<div class="alert alert-error">Template error</div>`)
 	}
 }
@@ -3820,7 +3822,7 @@ func (h *TemplateHandler) BackupNow(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		if _, err := h.backupManager.RunNow(r.Context(), householdID, passphrase); err != nil {
-			log.Printf("backup now failed: %v", err)
+			h.logger.Error("backup now failed", "error", err)
 		}
 	}()
 

@@ -2,7 +2,7 @@ package handler
 
 import (
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -16,6 +16,7 @@ type AccountHandler struct {
 	licenseKeyStore   *store.LicenseKeyStore
 	templates         *template.Template
 	baseURL           string
+	logger            *slog.Logger
 }
 
 func NewAccountHandler(
@@ -24,6 +25,7 @@ func NewAccountHandler(
 	lks *store.LicenseKeyStore,
 	tmpl *template.Template,
 	baseURL string,
+	logger *slog.Logger,
 ) *AccountHandler {
 	return &AccountHandler{
 		accountStore:      as,
@@ -31,6 +33,7 @@ func NewAccountHandler(
 		licenseKeyStore:   lks,
 		templates:         tmpl,
 		baseURL:           baseURL,
+		logger:            logger,
 	}
 }
 
@@ -73,7 +76,7 @@ func (h *AccountHandler) PricingPage(w http.ResponseWriter, r *http.Request) {
 func (h *AccountHandler) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("billing template error: %v", err)
+		h.logger.Error("template render", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }

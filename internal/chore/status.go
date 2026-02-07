@@ -1,7 +1,7 @@
 package chore
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/model"
@@ -43,7 +43,7 @@ func ComputeStatus(chore model.Chore, lastCompletion *time.Time, today time.Time
 	// Recurring chore — expand to find the current due date
 	rule, err := recurrence.Parse(chore.RecurrenceRule)
 	if err != nil {
-		log.Printf("chore %d: invalid recurrence rule %q: %v", chore.ID, chore.RecurrenceRule, err)
+		slog.Error("invalid recurrence rule", "chore_id", chore.ID, "rule", chore.RecurrenceRule, "error", err)
 		// Fall back: treat as one-off
 		if lastCompletion != nil {
 			return StatusCompleted, nil

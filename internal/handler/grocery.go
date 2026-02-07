@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,10 +17,11 @@ type GroceryHandler struct {
 	groceryStore *store.GroceryStore
 	memberStore  *store.FamilyMemberStore
 	hub          *websocket.Hub
+	logger       *slog.Logger
 }
 
-func NewGroceryHandler(gs *store.GroceryStore, ms *store.FamilyMemberStore, hub *websocket.Hub) *GroceryHandler {
-	return &GroceryHandler{groceryStore: gs, memberStore: ms, hub: hub}
+func NewGroceryHandler(gs *store.GroceryStore, ms *store.FamilyMemberStore, hub *websocket.Hub, logger *slog.Logger) *GroceryHandler {
+	return &GroceryHandler{groceryStore: gs, memberStore: ms, hub: hub, logger: logger}
 }
 
 func (h *GroceryHandler) broadcast(msg websocket.Message) {
@@ -64,7 +65,7 @@ func (h *GroceryHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.groceryStore.CreateItem(listID, req.Name, req.Quantity, req.Unit, req.Notes, req.Category, req.AddedBy)
 	if err != nil {
-		log.Printf("failed to create grocery item: %v", err)
+		h.logger.Error("create grocery item", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create item"})
 		return
 	}
@@ -177,7 +178,7 @@ func (h *GroceryHandler) ToggleChecked(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.groceryStore.ToggleChecked(id, req.CheckedBy)
 	if err != nil {
-		log.Printf("failed to toggle checked: %v", err)
+		h.logger.Error("toggle checked", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to toggle checked"})
 		return
 	}

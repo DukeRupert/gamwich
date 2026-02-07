@@ -3,7 +3,7 @@ package tunnel
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os/exec"
 	"sync"
 	"time"
@@ -46,6 +46,7 @@ type Manager struct {
 	cfg      Config
 	status   Status
 	callback StatusCallback
+	logger   *slog.Logger
 
 	cancel       context.CancelFunc
 	done         chan struct{}
@@ -53,10 +54,11 @@ type Manager struct {
 }
 
 // NewManager creates a new tunnel manager.
-func NewManager(cfg Config, cb StatusCallback) *Manager {
+func NewManager(cfg Config, cb StatusCallback, logger *slog.Logger) *Manager {
 	m := &Manager{
 		cfg:      cfg,
 		callback: cb,
+		logger:   logger,
 	}
 
 	if cfg.Token == "" {
@@ -129,7 +131,7 @@ func (m *Manager) Stop() {
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
-			log.Println("tunnel: stop timed out after 10s")
+			m.logger.Warn("tunnel stop timed out")
 		}
 	}
 }
@@ -224,7 +226,7 @@ func (m *Manager) run(ctx context.Context) {
 		m.setState(Status{State: StateReconnecting})
 		m.mu.Unlock()
 
-		log.Printf("tunnel: cloudflared exited (%v), retrying in %v (attempt %d/%d)", err, backoff, m.failureCount, maxFailures)
+		m.logger.Warn("cloudflared exited, retrying", "error", err, "backoff", backoff, "attempt", m.failureCount, "max_attempts", maxFailures)
 
 		select {
 		case <-ctx.Done():
