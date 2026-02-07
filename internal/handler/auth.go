@@ -19,6 +19,12 @@ const (
 	maxCodeAttempts   = 5
 )
 
+// isSecure returns true if the request arrived over TLS, either directly
+// or via a TLS-terminating reverse proxy (Caddy, nginx, etc.).
+func isSecure(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
 type AuthHandler struct {
 	userStore      *store.UserStore
 	householdStore *store.HouseholdStore
@@ -273,7 +279,7 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   90 * 24 * 60 * 60, // 90 days
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   isSecure(r),
 	})
 
 	// Redirect
@@ -357,7 +363,7 @@ func (h *AuthHandler) InviteAccept(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   90 * 24 * 60 * 60,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   isSecure(r),
 	})
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
