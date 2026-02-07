@@ -1,8 +1,18 @@
 {{define "settings-content"}}
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto" x-data="{ tab: 'general' }">
     <h1 class="text-3xl font-bold mb-6">Settings</h1>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- Tab bar -->
+    <div role="tablist" class="tabs tabs-bordered mb-6">
+        <button role="tab" class="tab" :class="tab === 'general' && 'tab-active'" @click="tab = 'general'">General</button>
+        <button role="tab" class="tab" :class="tab === 'selfhost' && 'tab-active'" @click="tab = 'selfhost'">
+            Self-Hosting
+            <span class="badge badge-sm badge-ghost ml-1">Coming Soon</span>
+        </button>
+    </div>
+
+    <!-- General tab -->
+    <div x-show="tab === 'general'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- Family Members -->
         <a href="/settings/family" class="card bg-base-100 shadow-md hover:shadow-lg transition-shadow cursor-pointer">
             <div class="card-body">
@@ -105,7 +115,10 @@
                 </div>
             </div>
         </div>
+    </div>
 
+    <!-- Self-Hosting tab -->
+    <div x-show="tab === 'selfhost'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- Remote Access -->
         <div class="card bg-base-100 shadow-md">
             <div class="card-body">
@@ -117,7 +130,7 @@
                 </h2>
                 <div id="tunnel-settings-container"
                      hx-get="/partials/settings/tunnel"
-                     hx-trigger="load"
+                     hx-trigger="intersect once"
                      hx-swap="innerHTML">
                     <span class="loading loading-spinner loading-sm"></span>
                 </div>
@@ -135,7 +148,7 @@
                 </h2>
                 <div id="s3-settings-container"
                      hx-get="/partials/settings/s3"
-                     hx-trigger="load"
+                     hx-trigger="intersect once"
                      hx-swap="innerHTML">
                     <span class="loading loading-spinner loading-sm"></span>
                 </div>
@@ -153,7 +166,7 @@
                 </h2>
                 <div id="backup-settings-container"
                      hx-get="/partials/settings/backup"
-                     hx-trigger="load"
+                     hx-trigger="intersect once"
                      hx-swap="innerHTML">
                     <span class="loading loading-spinner loading-sm"></span>
                 </div>
@@ -171,7 +184,7 @@
                 </h2>
                 <div id="push-settings-container"
                      hx-get="/partials/settings/push"
-                     hx-trigger="load"
+                     hx-trigger="intersect once"
                      hx-swap="innerHTML">
                     <span class="loading loading-spinner loading-sm"></span>
                 </div>
