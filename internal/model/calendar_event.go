@@ -15,6 +15,7 @@ type CalendarEvent struct {
 	RecurrenceParentID *int64     `json:"recurrence_parent_id"`
 	OriginalStartTime  *time.Time `json:"original_start_time"`
 	Cancelled          bool       `json:"cancelled"`
+	ReminderMinutes    *int       `json:"reminder_minutes,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 }

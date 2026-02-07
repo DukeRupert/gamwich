@@ -27,6 +27,54 @@ self.addEventListener('activate', function(event) {
     self.clients.claim();
 });
 
+// Push notification handler
+self.addEventListener('push', function(event) {
+    var data = { title: 'Gamwich', body: 'You have a new notification' };
+    if (event.data) {
+        try {
+            data = event.data.json();
+        } catch (e) {
+            data.body = event.data.text();
+        }
+    }
+
+    var options = {
+        body: data.body,
+        icon: '/static/icon-192.png',
+        badge: '/static/icon-192.png',
+        tag: data.tag || 'gamwich-notification',
+        data: { url: data.url || '/' },
+        renotify: true
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
+});
+
+// Notification click handler
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+
+    var url = event.notification.data && event.notification.data.url
+        ? event.notification.data.url
+        : '/';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            for (var i = 0; i < clientList.length; i++) {
+                var client = clientList[i];
+                if (client.url.indexOf(url) !== -1 && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            if (clients.openWindow) {
+                return clients.openWindow(url);
+            }
+        })
+    );
+});
+
 self.addEventListener('fetch', function(event) {
     if (event.request.method !== 'GET') return;
 

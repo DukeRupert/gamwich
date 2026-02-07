@@ -18,6 +18,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/model"
+	"github.com/dukerupert/gamwich/internal/push"
 	"github.com/dukerupert/gamwich/internal/recurrence"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/tunnel"
@@ -29,23 +30,26 @@ import (
 const activeUserCookie = "gamwich_active_user"
 
 type TemplateHandler struct {
-	store         *store.FamilyMemberStore
-	eventStore    *store.EventStore
-	choreStore    *store.ChoreStore
-	groceryStore  *store.GroceryStore
-	noteStore     *store.NoteStore
-	rewardStore   *store.RewardStore
-	settingsStore *store.SettingsStore
-	weatherSvc    *weather.Service
-	hub           *websocket.Hub
-	licenseClient *license.Client
-	tunnelManager *tunnel.Manager
-	backupManager *backup.Manager
-	backupStore   *store.BackupStore
-	templates     *template.Template
+	store          *store.FamilyMemberStore
+	eventStore     *store.EventStore
+	choreStore     *store.ChoreStore
+	groceryStore   *store.GroceryStore
+	noteStore      *store.NoteStore
+	rewardStore    *store.RewardStore
+	settingsStore  *store.SettingsStore
+	weatherSvc     *weather.Service
+	hub            *websocket.Hub
+	licenseClient  *license.Client
+	tunnelManager  *tunnel.Manager
+	backupManager  *backup.Manager
+	backupStore    *store.BackupStore
+	pushStore      *store.PushStore
+	pushService    *push.Service
+	pushScheduler  *push.Scheduler
+	templates      *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add":         func(a, b int) int { return a + b },
 		"formatBytes": formatBytes,
@@ -72,6 +76,9 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		tunnelManager: tm,
 		backupManager: bm,
 		backupStore:   bs,
+		pushStore:     ps,
+		pushService:   pushSvc,
+		pushScheduler: pushSched,
 		templates:     tmpl,
 	}
 }
@@ -429,6 +436,14 @@ func (h *TemplateHandler) CalendarEventCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if rmStr := r.FormValue("reminder_minutes"); rmStr != "" {
+		if rm, err := strconv.Atoi(rmStr); err == nil {
+			if err := h.eventStore.SetReminderMinutes(event.ID, &rm); err != nil {
+				log.Printf("set reminder: %v", err)
+			}
+		}
+	}
+
 	h.broadcast(websocket.NewMessage("calendar_event", "created", event.ID, nil))
 
 	w.Header().Set("HX-Trigger", "closeEventModal")
@@ -473,6 +488,11 @@ func (h *TemplateHandler) CalendarEventEditForm(w http.ResponseWriter, r *http.R
 	parentID, _ := strconv.ParseInt(r.URL.Query().Get("parent_id"), 10, 64)
 	occurrenceDate := r.URL.Query().Get("occurrence_date")
 
+	var reminderMinutes string
+	if event.ReminderMinutes != nil {
+		reminderMinutes = strconv.Itoa(*event.ReminderMinutes)
+	}
+
 	data := map[string]any{
 		"ID":              event.ID,
 		"Title":           event.Title,
@@ -489,6 +509,7 @@ func (h *TemplateHandler) CalendarEventEditForm(w http.ResponseWriter, r *http.R
 		"FamilyMemberID":  familyMemberID,
 		"Members":         members,
 		"RecurrenceRule":  event.RecurrenceRule,
+		"ReminderMinutes": reminderMinutes,
 		"Mode":            mode,
 		"ParentID":        parentID,
 		"OccurrenceDate":  occurrenceDate,
@@ -605,6 +626,20 @@ func (h *TemplateHandler) CalendarEventUpdate(w http.ResponseWriter, r *http.Req
 			log.Printf("update event: %v", err)
 			http.Error(w, "failed to update event", http.StatusInternalServerError)
 			return
+		}
+	}
+
+	// Update reminder for the target event
+	if rmStr := r.FormValue("reminder_minutes"); rmStr != "" {
+		if rm, err := strconv.Atoi(rmStr); err == nil {
+			if err := h.eventStore.SetReminderMinutes(id, &rm); err != nil {
+				log.Printf("set reminder: %v", err)
+			}
+		}
+	} else {
+		// Clear reminder if empty
+		if err := h.eventStore.SetReminderMinutes(id, nil); err != nil {
+			log.Printf("clear reminder: %v", err)
 		}
 	}
 
@@ -1581,6 +1616,13 @@ func (h *TemplateHandler) GroceryItemAdd(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.broadcast(websocket.NewMessage("grocery_item", "created", item.ID, map[string]any{"list_id": list.ID}))
+
+	// Fire push notification for grocery addition (exclude the adding user)
+	if h.pushScheduler != nil {
+		userID := auth.UserID(r.Context())
+		householdID := auth.HouseholdID(r.Context())
+		go h.pushScheduler.SendGroceryNotification(householdID, userID, name)
+	}
 
 	groceryData, err := h.buildGroceryListData()
 	if err != nil {
@@ -3460,6 +3502,21 @@ func (h *TemplateHandler) buildEventDetailData(event *model.CalendarEvent, isRec
 		data["DateLabel"] = event.StartTime.Format("Monday, January 2, 2006")
 	}
 
+	if event.ReminderMinutes != nil {
+		switch *event.ReminderMinutes {
+		case 15:
+			data["ReminderDesc"] = "15 minutes before"
+		case 30:
+			data["ReminderDesc"] = "30 minutes before"
+		case 60:
+			data["ReminderDesc"] = "1 hour before"
+		case 1440:
+			data["ReminderDesc"] = "1 day before"
+		default:
+			data["ReminderDesc"] = fmt.Sprintf("%d minutes before", *event.ReminderMinutes)
+		}
+	}
+
 	if event.FamilyMemberID != nil {
 		member, err := h.store.GetByID(*event.FamilyMemberID)
 		if err == nil && member != nil {
@@ -3810,4 +3867,91 @@ func (h *TemplateHandler) BackupDownload(w http.ResponseWriter, r *http.Request)
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	}
 	io.Copy(w, body)
+}
+
+// PushSettingsPartial renders the push notification settings card content.
+func (h *TemplateHandler) PushSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	hasPush := h.licenseClient.HasFeature("push_notifications")
+	userID := auth.UserID(r.Context())
+	householdID := auth.HouseholdID(r.Context())
+
+	data := map[string]any{
+		"HasPush": hasPush,
+	}
+
+	if hasPush && h.pushStore != nil {
+		subs, _ := h.pushStore.ListByUser(userID, householdID)
+		prefs, _ := h.pushStore.GetPreferences(userID, householdID)
+
+		// Build preference map with defaults
+		prefMap := map[string]bool{
+			model.NotifTypeCalendarReminder: true,
+			model.NotifTypeChoreDue:         true,
+			model.NotifTypeGroceryAdded:     true,
+		}
+		for _, p := range prefs {
+			prefMap[p.NotificationType] = p.Enabled
+		}
+
+		var vapidKey string
+		if h.pushService != nil {
+			vapidKey = h.pushService.VAPIDPublicKey()
+		}
+
+		data["Subscriptions"] = subs
+		data["SubscriptionCount"] = len(subs)
+		data["CalendarEnabled"] = prefMap[model.NotifTypeCalendarReminder]
+		data["ChoreEnabled"] = prefMap[model.NotifTypeChoreDue]
+		data["GroceryEnabled"] = prefMap[model.NotifTypeGroceryAdded]
+		data["VAPIDKey"] = vapidKey
+	}
+
+	h.renderPartial(w, "push-settings-form", data)
+}
+
+// PushPreferencesUpdate handles saving push notification preferences.
+func (h *TemplateHandler) PushPreferencesUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	userID := auth.UserID(r.Context())
+	householdID := auth.HouseholdID(r.Context())
+
+	calendarEnabled := r.FormValue("calendar_enabled") == "true"
+	choreEnabled := r.FormValue("chore_enabled") == "true"
+	groceryEnabled := r.FormValue("grocery_enabled") == "true"
+
+	h.pushStore.SetPreference(userID, householdID, model.NotifTypeCalendarReminder, calendarEnabled)
+	h.pushStore.SetPreference(userID, householdID, model.NotifTypeChoreDue, choreEnabled)
+	h.pushStore.SetPreference(userID, householdID, model.NotifTypeGroceryAdded, groceryEnabled)
+
+	w.Header().Set("HX-Trigger", `{"showToast": "Notification preferences updated"}`)
+	h.PushSettingsPartial(w, r)
+}
+
+// PushDevicesList renders the push subscription device list.
+func (h *TemplateHandler) PushDevicesList(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	householdID := auth.HouseholdID(r.Context())
+
+	subs, _ := h.pushStore.ListByUser(userID, householdID)
+	h.renderPartial(w, "push-devices-list", map[string]any{
+		"Subscriptions": subs,
+	})
+}
+
+// PushDeviceDelete removes a push subscription.
+func (h *TemplateHandler) PushDeviceDelete(w http.ResponseWriter, r *http.Request) {
+	householdID := auth.HouseholdID(r.Context())
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	h.pushStore.DeleteSubscription(id, householdID)
+	w.Header().Set("HX-Trigger", `{"showToast": "Device removed"}`)
+	h.PushSettingsPartial(w, r)
 }

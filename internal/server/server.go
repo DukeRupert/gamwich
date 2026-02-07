@@ -11,6 +11,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/handler"
 	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/middleware"
+	"github.com/dukerupert/gamwich/internal/push"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/tunnel"
 	"github.com/dukerupert/gamwich/internal/weather"
@@ -29,15 +30,19 @@ type Server struct {
 	settingsH       *handler.SettingsHandler
 	templateHandler *handler.TemplateHandler
 	authH           *handler.AuthHandler
+	pushH           *handler.PushHandler
 	sessionStore    *store.SessionStore
 	householdStore  *store.HouseholdStore
+	pushStore       *store.PushStore
 	rateLimiter     *middleware.RateLimiter
 	licenseClient   *license.Client
 	tunnelManager   *tunnel.Manager
 	backupManager   *backup.Manager
+	pushService     *push.Service
+	pushScheduler   *push.Scheduler
 }
 
-func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string, backupCfg backup.Config) *Server {
+func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, baseURL string, licenseClient *license.Client, port string, backupCfg backup.Config, pushCfg push.Config) *Server {
 	hub := ws.NewHub()
 
 	familyMemberStore := store.NewFamilyMemberStore(db)
@@ -88,6 +93,17 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		})
 	})
 
+	// Push notification service + scheduler
+	pushSt := store.NewPushStore(db)
+	var pushSvc *push.Service
+	var pushSched *push.Scheduler
+	var pushH *handler.PushHandler
+	if pushCfg.VAPIDPublicKey != "" && pushCfg.VAPIDPrivateKey != "" {
+		pushSvc = push.NewService(pushCfg.VAPIDPublicKey, pushCfg.VAPIDPrivateKey)
+		pushSched = push.NewScheduler(pushSvc, pushSt, eventStore, choreStore, familyMemberStore)
+		pushH = handler.NewPushHandler(pushSt, pushSvc)
+	}
+
 	return &Server{
 		db:              db,
 		hub:             hub,
@@ -98,14 +114,18 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
 		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore, pushSt, pushSvc, pushSched),
 		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
+		pushH:           pushH,
 		sessionStore:    sessionStore,
 		householdStore:  householdStore,
+		pushStore:       pushSt,
 		rateLimiter:     middleware.NewRateLimiter(),
 		licenseClient:   licenseClient,
 		tunnelManager:   tunnelMgr,
 		backupManager:   backupMgr,
+		pushService:     pushSvc,
+		pushScheduler:   pushSched,
 	}
 }
 
@@ -137,6 +157,16 @@ func (s *Server) TunnelManager() *tunnel.Manager {
 // BackupManager returns the backup manager.
 func (s *Server) BackupManager() *backup.Manager {
 	return s.backupManager
+}
+
+// PushScheduler returns the push notification scheduler.
+func (s *Server) PushScheduler() *push.Scheduler {
+	return s.pushScheduler
+}
+
+// PushStore returns the push store for cleanup tasks.
+func (s *Server) PushStore() *store.PushStore {
+	return s.pushStore
 }
 
 func (s *Server) Router() http.Handler {
@@ -240,6 +270,17 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/settings/kiosk", s.settingsH.UpdateKiosk)
 	mux.HandleFunc("GET /api/settings/weather", s.settingsH.GetWeather)
 	mux.HandleFunc("PUT /api/settings/weather", s.settingsH.UpdateWeather)
+
+	// Push notification API routes
+	if s.pushH != nil {
+		mux.HandleFunc("POST /api/push/subscribe", s.pushH.Subscribe)
+		mux.HandleFunc("DELETE /api/push/subscriptions/{id}", s.pushH.Unsubscribe)
+		mux.HandleFunc("GET /api/push/subscriptions", s.pushH.ListSubscriptions)
+		mux.HandleFunc("GET /api/push/vapid-key", s.pushH.GetVAPIDKey)
+		mux.HandleFunc("GET /api/push/preferences", s.pushH.GetPreferences)
+		mux.HandleFunc("PUT /api/push/preferences", s.pushH.UpdatePreferences)
+		mux.HandleFunc("POST /api/push/test", s.pushH.TestNotification)
+	}
 
 	// Page routes — full layout
 	mux.HandleFunc("GET /", s.templateHandler.Dashboard)
@@ -360,6 +401,12 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /partials/settings/backup/status", s.templateHandler.BackupStatusPartial)
 	mux.HandleFunc("POST /partials/settings/backup/restore/{id}", s.templateHandler.BackupRestore)
 	mux.HandleFunc("GET /partials/settings/backup/download/{id}", s.templateHandler.BackupDownload)
+
+	// Push notification partials (HTMX)
+	mux.HandleFunc("GET /partials/settings/push", s.templateHandler.PushSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/push/preferences", s.templateHandler.PushPreferencesUpdate)
+	mux.HandleFunc("GET /partials/settings/push/devices", s.templateHandler.PushDevicesList)
+	mux.HandleFunc("DELETE /partials/settings/push/devices/{id}", s.templateHandler.PushDeviceDelete)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", ws.HandleWebSocket(s.hub))

@@ -14,6 +14,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/database"
 	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/license"
+	"github.com/dukerupert/gamwich/internal/push"
 	"github.com/dukerupert/gamwich/internal/server"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
@@ -86,7 +87,25 @@ func main() {
 		},
 	}
 
-	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port, backupCfg)
+	// Push notification config — auto-generate VAPID keys if not set
+	pushCfg := push.Config{
+		VAPIDPublicKey:  os.Getenv("GAMWICH_VAPID_PUBLIC_KEY"),
+		VAPIDPrivateKey: os.Getenv("GAMWICH_VAPID_PRIVATE_KEY"),
+	}
+	if pushCfg.VAPIDPublicKey == "" || pushCfg.VAPIDPrivateKey == "" {
+		pub, priv, err := push.GenerateVAPIDKeys()
+		if err != nil {
+			log.Printf("push: failed to generate VAPID keys: %v", err)
+		} else {
+			pushCfg.VAPIDPublicKey = pub
+			pushCfg.VAPIDPrivateKey = priv
+			log.Println("push: auto-generated VAPID keys. Set these env vars to persist:")
+			log.Printf("  GAMWICH_VAPID_PUBLIC_KEY=%s", pub)
+			log.Printf("  GAMWICH_VAPID_PRIVATE_KEY=%s", priv)
+		}
+	}
+
+	srv := server.New(db, weatherSvc, emailClient, baseURL, licenseClient, port, backupCfg, pushCfg)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -117,6 +136,13 @@ func main() {
 		srv.BackupManager().Start(backupCtx)
 	}
 
+	// Start push scheduler if licensed
+	pushCtx, pushCancel := context.WithCancel(context.Background())
+	defer pushCancel()
+	if licenseClient.HasFeature("push_notifications") && srv.PushScheduler() != nil {
+		srv.PushScheduler().Start(pushCtx)
+	}
+
 	// Background cleanup goroutine
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
@@ -137,6 +163,12 @@ func main() {
 					log.Printf("cleaned up %d expired magic links", n)
 				}
 				srv.RateLimiter().Cleanup()
+				// Clean up old sent_notifications (older than 7 days)
+				if ps := srv.PushStore(); ps != nil {
+					if err := ps.CleanupSent(time.Now().UTC().AddDate(0, 0, -7)); err != nil {
+						log.Printf("cleanup sent notifications: %v", err)
+					}
+				}
 			case <-cleanupCtx.Done():
 				return
 			}
@@ -159,6 +191,10 @@ func main() {
 	srv.BackupManager().Stop()
 	tunnelCancel()
 	srv.TunnelManager().Stop()
+	pushCancel()
+	if srv.PushScheduler() != nil {
+		srv.PushScheduler().Stop()
+	}
 	cleanupCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

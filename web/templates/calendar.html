@@ -304,6 +304,18 @@
             </select>
         </div>
 
+        <!-- Reminder -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Reminder</span></label>
+            <select x-model="reminder" class="select select-bordered w-full">
+                <option value="">No reminder</option>
+                <option value="15">15 minutes before</option>
+                <option value="30">30 minutes before</option>
+                <option value="60">1 hour before</option>
+                <option value="1440">1 day before</option>
+            </select>
+        </div>
+
         <!-- Family Member Selector -->
         {{if .Members}}
         <div class="form-control mb-3">
@@ -357,6 +369,7 @@
         <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
         <input type="hidden" name="family_member_id" :value="selectedMember || ''">
         <input type="hidden" name="recurrence_rule" :value="recurrence">
+        <input type="hidden" name="reminder_minutes" :value="reminder">
 
         <!-- Actions -->
         <div class="flex justify-end gap-2">
@@ -386,6 +399,7 @@ function eventForm() {
         location: '',
         description: '',
         recurrence: '',
+        reminder: '',
 
         get startHour12() {
             let h = this.startHour % 12;
@@ -562,6 +576,18 @@ function eventForm() {
         </div>
         {{end}}
 
+        <!-- Reminder -->
+        <div class="form-control mb-3">
+            <label class="label"><span class="label-text font-medium">Reminder</span></label>
+            <select x-model="reminder" class="select select-bordered w-full">
+                <option value="">No reminder</option>
+                <option value="15">15 minutes before</option>
+                <option value="30">30 minutes before</option>
+                <option value="60">1 hour before</option>
+                <option value="1440">1 day before</option>
+            </select>
+        </div>
+
         <!-- Family Member Selector -->
         {{if .Members}}
         <div class="form-control mb-3">
@@ -615,6 +641,7 @@ function eventForm() {
         <input type="hidden" name="all_day" :value="allDay ? '1' : '0'">
         <input type="hidden" name="family_member_id" :value="selectedMember || ''">
         <input type="hidden" name="recurrence_rule" :value="recurrence">
+        <input type="hidden" name="reminder_minutes" :value="reminder">
         {{if .Mode}}<input type="hidden" name="mode" value="{{.Mode}}">{{end}}
         {{if .ParentID}}<input type="hidden" name="parent_id" value="{{.ParentID}}">{{end}}
         {{if .OccurrenceDate}}<input type="hidden" name="occurrence_date" value="{{.OccurrenceDate}}">{{end}}
@@ -647,6 +674,7 @@ function eventEditForm() {
         location: '{{.Location}}',
         description: '{{.Description}}',
         recurrence: '{{.RecurrenceRule}}',
+        reminder: '{{.ReminderMinutes}}',
 
         get startHour12() {
             let h = this.startHour % 12;
@@ -744,6 +772,16 @@ function eventEditForm() {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             <div class="font-medium">{{.RecurrenceDesc}}</div>
+        </div>
+        {{end}}
+
+        <!-- Reminder -->
+        {{if .ReminderDesc}}
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <div class="font-medium">{{.ReminderDesc}}</div>
         </div>
         {{end}}
 

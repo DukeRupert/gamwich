@@ -85,11 +85,12 @@ func scanEvent(scanner interface{ Scan(...any) error }) (*model.CalendarEvent, e
 	var memberID sql.NullInt64
 	var parentID sql.NullInt64
 	var originalStart sql.NullTime
+	var reminderMinutes sql.NullInt64
 
 	err := scanner.Scan(
 		&e.ID, &e.Title, &e.Description, &e.StartTime, &e.EndTime,
 		&allDayInt, &memberID, &e.Location, &e.RecurrenceRule,
-		&parentID, &originalStart, &cancelledInt,
+		&parentID, &originalStart, &cancelledInt, &reminderMinutes,
 		&e.CreatedAt, &e.UpdatedAt,
 	)
 	if err != nil {
@@ -107,11 +108,15 @@ func scanEvent(scanner interface{ Scan(...any) error }) (*model.CalendarEvent, e
 	if originalStart.Valid {
 		e.OriginalStartTime = &originalStart.Time
 	}
+	if reminderMinutes.Valid {
+		v := int(reminderMinutes.Int64)
+		e.ReminderMinutes = &v
+	}
 
 	return &e, nil
 }
 
-const selectCols = `id, title, description, start_time, end_time, all_day, family_member_id, location, recurrence_rule, recurrence_parent_id, original_start_time, cancelled, created_at, updated_at`
+const selectCols = `id, title, description, start_time, end_time, all_day, family_member_id, location, recurrence_rule, recurrence_parent_id, original_start_time, cancelled, reminder_minutes, created_at, updated_at`
 
 func (s *EventStore) GetByID(id int64) (*model.CalendarEvent, error) {
 	row := s.db.QueryRow(
@@ -240,6 +245,48 @@ func (s *EventStore) UpdateWithRecurrence(id int64, title, description string, s
 	}
 
 	return s.GetByID(id)
+}
+
+func (s *EventStore) SetReminderMinutes(id int64, minutes *int) error {
+	var val any
+	if minutes != nil {
+		val = *minutes
+	}
+	_, err := s.db.Exec(`UPDATE calendar_events SET reminder_minutes = ? WHERE id = ?`, val, id)
+	if err != nil {
+		return fmt.Errorf("set reminder minutes: %w", err)
+	}
+	return nil
+}
+
+// ListUpcomingWithReminders returns non-cancelled events that have a reminder set
+// and whose (start_time - reminder_minutes) falls within the given window.
+func (s *EventStore) ListUpcomingWithReminders(windowStart, windowEnd time.Time) ([]model.CalendarEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT `+selectCols+`
+		 FROM calendar_events
+		 WHERE reminder_minutes IS NOT NULL
+		   AND cancelled = 0
+		   AND datetime(start_time, '-' || reminder_minutes || ' minutes') >= ?
+		   AND datetime(start_time, '-' || reminder_minutes || ' minutes') < ?
+		 ORDER BY start_time ASC`,
+		windowStart.UTC().Format("2006-01-02 15:04:05"),
+		windowEnd.UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query upcoming reminders: %w", err)
+	}
+	defer rows.Close()
+
+	var events []model.CalendarEvent
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan reminder event: %w", err)
+		}
+		events = append(events, *e)
+	}
+	return events, rows.Err()
 }
 
 func (s *EventStore) Delete(id int64) error {

@@ -141,6 +141,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- Push Notifications -->
+        <div class="card bg-base-100 shadow-md">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    Push Notifications
+                </h2>
+                <div id="push-settings-container"
+                     hx-get="/partials/settings/push"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {{end}}
@@ -723,5 +741,219 @@
 </div>
 {{else}}
 <p class="text-sm text-base-content/50 text-center py-2">No backups yet</p>
+{{end}}
+{{end}}
+
+{{define "push-settings-form"}}
+<div class="space-y-3">
+    {{if not .HasPush}}
+    <div class="badge badge-ghost">Cloud Feature</div>
+    <p class="text-sm text-base-content/60">Push notifications let family members receive reminders for calendar events, chore due dates, and grocery list updates.</p>
+    <a href="https://gamwich.app/pricing" target="_blank" rel="noopener" class="btn btn-outline btn-sm w-full mt-2">
+        Upgrade to Cloud
+    </a>
+    {{else}}
+    <div x-data="pushSettings()" x-init="init()">
+        <!-- Enable/Status section -->
+        <div class="space-y-3">
+            <template x-if="!supported">
+                <div class="alert alert-warning">
+                    <span class="text-sm">Push notifications are not supported in this browser.</span>
+                </div>
+            </template>
+
+            <template x-if="supported && permission === 'denied'">
+                <div class="alert alert-error">
+                    <span class="text-sm">Notifications are blocked. Please enable them in your browser settings.</span>
+                </div>
+            </template>
+
+            <template x-if="supported && permission !== 'denied'">
+                <div>
+                    <template x-if="!subscribed">
+                        <button class="btn btn-primary btn-sm w-full" @click="enablePush()" :disabled="enabling">
+                            <span x-show="!enabling">Enable Notifications</span>
+                            <span x-show="enabling" class="loading loading-spinner loading-xs"></span>
+                        </button>
+                    </template>
+                    <template x-if="subscribed">
+                        <div class="flex items-center gap-2">
+                            <div class="badge badge-success">Enabled</div>
+                            <button class="btn btn-ghost btn-xs" @click="disablePush()">Disable</button>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- Notification Preferences -->
+        <template x-if="subscribed">
+            <div class="space-y-3 mt-3">
+                <div class="divider text-xs">Notification Types</div>
+                <form hx-put="/partials/settings/push/preferences"
+                      hx-target="#push-settings-container"
+                      hx-swap="innerHTML"
+                      class="space-y-2"
+                      x-data="{ cal: {{.CalendarEnabled}}, chore: {{.ChoreEnabled}}, grocery: {{.GroceryEnabled}} }">
+
+                    <div class="form-control">
+                        <label class="label cursor-pointer">
+                            <span class="label-text font-medium">Calendar reminders</span>
+                            <input type="hidden" name="calendar_enabled" :value="cal ? 'true' : 'false'">
+                            <input type="checkbox" class="toggle toggle-primary toggle-sm" x-model="cal">
+                        </label>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label cursor-pointer">
+                            <span class="label-text font-medium">Chore due reminders</span>
+                            <input type="hidden" name="chore_enabled" :value="chore ? 'true' : 'false'">
+                            <input type="checkbox" class="toggle toggle-primary toggle-sm" x-model="chore">
+                        </label>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label cursor-pointer">
+                            <span class="label-text font-medium">Grocery list additions</span>
+                            <input type="hidden" name="grocery_enabled" :value="grocery ? 'true' : 'false'">
+                            <input type="checkbox" class="toggle toggle-primary toggle-sm" x-model="grocery">
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-sm w-full">Save Preferences</button>
+                </form>
+
+                <!-- Test Notification -->
+                <div class="divider text-xs">Test</div>
+                <button class="btn btn-secondary btn-sm w-full"
+                        @click="sendTest()">
+                    Send Test Notification
+                </button>
+
+                <!-- Registered Devices -->
+                {{if .Subscriptions}}
+                <div class="divider text-xs">Devices ({{.SubscriptionCount}})</div>
+                {{template "push-devices-list" .}}
+                {{end}}
+            </div>
+        </template>
+    </div>
+
+    <script>
+    function pushSettings() {
+        return {
+            supported: ('serviceWorker' in navigator && 'PushManager' in window),
+            permission: (typeof Notification !== 'undefined' ? Notification.permission : 'denied'),
+            subscribed: {{if .Subscriptions}}{{if gt .SubscriptionCount 0}}true{{else}}false{{end}}{{else}}false{{end}},
+            enabling: false,
+            vapidKey: '{{.VAPIDKey}}',
+
+            init() {
+                if (this.supported && Notification.permission === 'granted') {
+                    navigator.serviceWorker.ready.then(function(reg) {
+                        return reg.pushManager.getSubscription();
+                    }).then(function(sub) {
+                        // subscription check complete
+                    });
+                }
+            },
+
+            async enablePush() {
+                this.enabling = true;
+                try {
+                    var perm = await Notification.requestPermission();
+                    this.permission = perm;
+                    if (perm !== 'granted') {
+                        this.enabling = false;
+                        return;
+                    }
+
+                    var reg = await navigator.serviceWorker.ready;
+                    var sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: this.urlBase64ToUint8Array(this.vapidKey)
+                    });
+
+                    var key = sub.getKey('p256dh');
+                    var authKey = sub.getKey('auth');
+
+                    var resp = await fetch('/api/push/subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            endpoint: sub.endpoint,
+                            p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(key))),
+                            auth: btoa(String.fromCharCode.apply(null, new Uint8Array(authKey))),
+                            device_name: navigator.userAgent.split('(')[0].trim()
+                        })
+                    });
+
+                    if (resp.ok) {
+                        this.subscribed = true;
+                        htmx.ajax('GET', '/partials/settings/push', '#push-settings-container');
+                    }
+                } catch (e) {
+                    console.error('Push subscribe failed:', e);
+                }
+                this.enabling = false;
+            },
+
+            async disablePush() {
+                try {
+                    var reg = await navigator.serviceWorker.ready;
+                    var sub = await reg.pushManager.getSubscription();
+                    if (sub) {
+                        await sub.unsubscribe();
+                    }
+                    this.subscribed = false;
+                    htmx.ajax('GET', '/partials/settings/push', '#push-settings-container');
+                } catch (e) {
+                    console.error('Push unsubscribe failed:', e);
+                }
+            },
+
+            async sendTest() {
+                try {
+                    await fetch('/api/push/test', { method: 'POST' });
+                } catch (e) {
+                    console.error('Test push failed:', e);
+                }
+            },
+
+            urlBase64ToUint8Array(base64String) {
+                var padding = '='.repeat((4 - base64String.length % 4) % 4);
+                var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+                var rawData = window.atob(base64);
+                var outputArray = new Uint8Array(rawData.length);
+                for (var i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
+            }
+        };
+    }
+    </script>
+    {{end}}
+</div>
+{{end}}
+
+{{define "push-devices-list"}}
+{{if .Subscriptions}}
+<div class="space-y-1">
+    {{range .Subscriptions}}
+    <div class="flex items-center justify-between text-sm bg-base-200 rounded px-2 py-1">
+        <span class="truncate flex-1">{{if .DeviceName}}{{.DeviceName}}{{else}}Unknown device{{end}}</span>
+        <button class="btn btn-ghost btn-xs text-error"
+                hx-delete="/partials/settings/push/devices/{{.ID}}"
+                hx-target="#push-settings-container"
+                hx-swap="innerHTML"
+                hx-confirm="Remove this device?">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    {{end}}
+</div>
 {{end}}
 {{end}}
