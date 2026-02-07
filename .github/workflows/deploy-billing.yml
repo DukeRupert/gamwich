@@ -3,7 +3,6 @@ name: Build, Push & Deploy Billing
 on:
   push:
     branches: [main]
-    tags: ["v*"]
     paths:
       - 'cmd/billing/**'
       - 'internal/billing/**'
