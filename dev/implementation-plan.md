@@ -477,34 +477,33 @@ The Cloud tier monetizes the natural desire for remote access and data safety. T
 
 ---
 
-### Milestone 4.4: Push Notifications
+### Milestone 4.4: Push Notifications ✅
 
 **Goal:** Mobile push notifications for calendar reminders, chore due dates, and grocery list updates.
 
+**Status:** Complete — Web Push (RFC 8030) with VAPID authentication via `webpush-go`. Per-user subscription management, notification preferences (calendar_reminder, chore_due, grocery_added), deduplication via `sent_notifications` table, 60-second background scheduler, service worker push/click handlers, and calendar event reminder UI. VAPID keys auto-generated on first startup if env vars are missing. 17 tests across push store and service.
+
 #### Tasks
 
-1. **Add push subscription data model**
-   - Migration: `push_subscriptions` table (`id`, `user_id` FK, `household_id` FK, `endpoint`, `p256dh_key`, `auth_key`, `created_at`)
-   - _Test: Migration runs_
+1. **~~Add push subscription data model~~** ✅
+   - Migration `015_add_push_notifications.sql`: `push_subscriptions`, `notification_preferences`, `sent_notifications` tables + `reminder_minutes` column on `calendar_events`
+   - Models: `internal/model/push.go` (PushSubscription, NotificationPreference)
 
-2. **Build Web Push integration**
-   - `internal/push/push.go` — Web Push protocol (RFC 8030) using VAPID
-   - Generate VAPID keys on first run, store in config
-   - `SendNotification(subscription, title, body, url)` method
-   - _Test: Send test notification to a push endpoint_
+2. **~~Build Web Push integration~~** ✅
+   - `internal/push/push.go` — Service with Send, VAPIDPublicKey, GenerateVAPIDKeys (ECDSA P-256)
+   - `internal/push/scheduler.go` — Background scheduler (60s tick): calendar reminders, chore due (hourly), grocery notifications (event-driven)
+   - `internal/store/push.go` — Full CRUD + deduplication (15 store tests)
 
-3. **Build notification triggers**
-   - Calendar reminder: configurable lead time (15 min, 1 hour, 1 day before event)
-   - Chore due: morning notification for today's due chores
-   - Grocery list: notification when items are added (configurable, off by default to avoid noise)
-   - Background scheduler: check for pending notifications every minute
-   - _Test: Create event with reminder, notification fires at correct time_
+3. **~~Build notification triggers~~** ✅
+   - Calendar: configurable reminder (15 min, 30 min, 1 hour, 1 day) with `<select>` in event create/edit forms
+   - Chore due: daily summary sent once per hour (minute==0)
+   - Grocery: fires when items added, excludes the adding user
+   - Deduplication via UNIQUE(household_id, notification_type, reference_id, lead_time_minutes)
 
-4. **Build push subscription UI**
-   - Service worker handles push events and displays system notifications
-   - Settings page: enable/disable notification types, manage subscriptions per device
-   - "Enable notifications" prompt with browser permission request
-   - _Test: Subscribe, receive test notification, toggle types, unsubscribe_
+4. **~~Build push subscription UI~~** ✅
+   - Service worker: push + notificationclick event handlers
+   - Settings: Push Notifications card with Alpine.js subscribe/unsubscribe, preference toggles, test button, device list
+   - Feature-gated via `licenseClient.HasFeature("push_notifications")`
 
 ---
 
@@ -701,7 +700,7 @@ These apply throughout all phases and should be addressed continuously.
 - **Browser testing:** Chrome (kiosk), Safari (iOS companion), Firefox
 
 ### Configuration
-- **Environment-based config:** `GAMWICH_DB_PATH`, `GAMWICH_PORT`, `GAMWICH_TIMEZONE`, `GAMWICH_POSTMARK_TOKEN`, `GAMWICH_BASE_URL`, `GAMWICH_FROM_EMAIL`, `GAMWICH_STRIPE_KEY`, `GAMWICH_STRIPE_WEBHOOK_SECRET`
+- **Environment-based config:** `GAMWICH_DB_PATH`, `GAMWICH_PORT`, `GAMWICH_TIMEZONE`, `GAMWICH_POSTMARK_TOKEN`, `GAMWICH_BASE_URL`, `GAMWICH_FROM_EMAIL`, `GAMWICH_STRIPE_KEY`, `GAMWICH_STRIPE_WEBHOOK_SECRET`, `GAMWICH_VAPID_PUBLIC_KEY`, `GAMWICH_VAPID_PRIVATE_KEY`
 - **Settings page in UI:** weather location, quiet hours, default list, theme, sync intervals, notification preferences, backup schedule, tunnel status
 - **Config file:** TOML or YAML for initial setup, overridable by env vars
 
