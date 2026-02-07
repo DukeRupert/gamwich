@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"regexp"
 	"strconv"
+	"strings"
 
+	"github.com/dukerupert/gamwich/internal/backup"
+	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/store"
 	"github.com/dukerupert/gamwich/internal/weather"
 	"github.com/dukerupert/gamwich/internal/websocket"
@@ -17,11 +21,13 @@ var timeFormatRegexp = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 type SettingsHandler struct {
 	settingsStore *store.SettingsStore
 	weatherSvc    *weather.Service
+	emailClient   *email.Client
+	backupManager *backup.Manager
 	hub           *websocket.Hub
 }
 
-func NewSettingsHandler(ss *store.SettingsStore, ws *weather.Service, hub *websocket.Hub) *SettingsHandler {
-	return &SettingsHandler{settingsStore: ss, weatherSvc: ws, hub: hub}
+func NewSettingsHandler(ss *store.SettingsStore, ws *weather.Service, ec *email.Client, bm *backup.Manager, hub *websocket.Hub) *SettingsHandler {
+	return &SettingsHandler{settingsStore: ss, weatherSvc: ws, emailClient: ec, backupManager: bm, hub: hub}
 }
 
 func (h *SettingsHandler) broadcast(msg websocket.Message) {
@@ -170,6 +176,144 @@ func validateKioskSettings(settings map[string]string) error {
 			if !timeFormatRegexp.MatchString(value) {
 				return fmt.Errorf("%s must be HH:MM format", key)
 			}
+		}
+	}
+	return nil
+}
+
+func (h *SettingsHandler) GetEmail(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsStore.GetEmailSettings()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get settings"})
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *SettingsHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+
+	if err := validateEmailSettings(req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	for key, value := range req {
+		if err := h.settingsStore.Set(key, value); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save settings"})
+			return
+		}
+	}
+
+	if h.emailClient != nil {
+		h.emailClient.UpdateConfig(
+			req["email_postmark_token"],
+			req["email_from_address"],
+			req["email_base_url"],
+		)
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	settings, err := h.settingsStore.GetEmailSettings()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get settings"})
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func validateEmailSettings(settings map[string]string) error {
+	allowedKeys := map[string]bool{
+		"email_postmark_token": true,
+		"email_from_address":   true,
+		"email_base_url":       true,
+	}
+
+	for key, value := range settings {
+		if !allowedKeys[key] {
+			return fmt.Errorf("unknown setting: %s", key)
+		}
+		switch key {
+		case "email_from_address":
+			if value != "" {
+				if _, err := mail.ParseAddress(value); err != nil {
+					return fmt.Errorf("email_from_address must be a valid email address")
+				}
+			}
+		case "email_base_url":
+			if value != "" && !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+				return fmt.Errorf("email_base_url must start with http:// or https://")
+			}
+		}
+	}
+	return nil
+}
+
+func (h *SettingsHandler) GetS3(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsStore.GetS3Settings()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get settings"})
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *SettingsHandler) UpdateS3(w http.ResponseWriter, r *http.Request) {
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+
+	if err := validateS3Settings(req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	for key, value := range req {
+		if err := h.settingsStore.Set(key, value); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save settings"})
+			return
+		}
+	}
+
+	if h.backupManager != nil {
+		h.backupManager.UpdateS3Config(backup.S3Config{
+			Endpoint:  req["backup_s3_endpoint"],
+			Bucket:    req["backup_s3_bucket"],
+			Region:    req["backup_s3_region"],
+			AccessKey: req["backup_s3_access_key"],
+			SecretKey: req["backup_s3_secret_key"],
+		})
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	settings, err := h.settingsStore.GetS3Settings()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get settings"})
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func validateS3Settings(settings map[string]string) error {
+	allowedKeys := map[string]bool{
+		"backup_s3_endpoint":   true,
+		"backup_s3_bucket":     true,
+		"backup_s3_region":     true,
+		"backup_s3_access_key": true,
+		"backup_s3_secret_key": true,
+	}
+
+	for key := range settings {
+		if !allowedKeys[key] {
+			return fmt.Errorf("unknown setting: %s", key)
 		}
 	}
 	return nil

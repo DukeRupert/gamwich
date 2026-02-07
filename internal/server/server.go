@@ -113,8 +113,8 @@ func New(db *sql.DB, weatherSvc *weather.Service, emailClient *email.Client, bas
 		groceryH:        handler.NewGroceryHandler(groceryStore, familyMemberStore, hub),
 		noteH:           handler.NewNoteHandler(noteStore, familyMemberStore, hub),
 		rewardH:         handler.NewRewardHandler(rewardStore, familyMemberStore, hub),
-		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, hub),
-		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore, pushSt, pushSvc, pushSched),
+		settingsH:       handler.NewSettingsHandler(settingsStore, weatherSvc, emailClient, backupMgr, hub),
+		templateHandler: handler.NewTemplateHandler(familyMemberStore, eventStore, choreStore, groceryStore, noteStore, rewardStore, settingsStore, weatherSvc, hub, licenseClient, tunnelMgr, backupMgr, backupStore, pushSt, pushSvc, pushSched, emailClient),
 		authH:           handler.NewAuthHandler(userStore, householdStore, sessionStore, magicLinkStore, emailClient, baseURL),
 		pushH:           pushH,
 		sessionStore:    sessionStore,
@@ -270,6 +270,10 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/settings/kiosk", s.settingsH.UpdateKiosk)
 	mux.HandleFunc("GET /api/settings/weather", s.settingsH.GetWeather)
 	mux.HandleFunc("PUT /api/settings/weather", s.settingsH.UpdateWeather)
+	mux.HandleFunc("GET /api/settings/email", s.settingsH.GetEmail)
+	mux.HandleFunc("PUT /api/settings/email", s.settingsH.UpdateEmail)
+	mux.HandleFunc("GET /api/settings/s3", s.settingsH.GetS3)
+	mux.HandleFunc("PUT /api/settings/s3", s.settingsH.UpdateS3)
 
 	// Push notification API routes
 	if s.pushH != nil {
@@ -337,6 +341,10 @@ func (s *Server) registerProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /partials/settings/theme", s.templateHandler.ThemeSettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/license", s.templateHandler.LicenseSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/license", s.templateHandler.LicenseKeyUpdate)
+	mux.HandleFunc("GET /partials/settings/email", s.templateHandler.EmailSettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/email", s.templateHandler.EmailSettingsUpdate)
+	mux.HandleFunc("GET /partials/settings/s3", s.templateHandler.S3SettingsPartial)
+	mux.HandleFunc("PUT /partials/settings/s3", s.templateHandler.S3SettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/tunnel", s.templateHandler.TunnelSettingsPartial)
 	mux.HandleFunc("PUT /partials/settings/tunnel", s.templateHandler.TunnelSettingsUpdate)
 	mux.HandleFunc("GET /partials/settings/tunnel/status", s.templateHandler.TunnelStatusPartial)

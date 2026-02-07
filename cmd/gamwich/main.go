@@ -60,22 +60,37 @@ func main() {
 	}
 	weatherSvc := weather.NewService(weatherCfg)
 
-	// Email config
+	// Email config: DB values take priority, env vars as fallback
 	postmarkToken := os.Getenv("GAMWICH_POSTMARK_TOKEN")
 	fromEmail := os.Getenv("GAMWICH_FROM_EMAIL")
 	baseURL := os.Getenv("GAMWICH_BASE_URL")
 	if baseURL == "" {
 		baseURL = fmt.Sprintf("http://localhost:%s", port)
 	}
+	if dbEmail, err := settingsStore.GetEmailSettings(); err == nil {
+		if v := dbEmail["email_postmark_token"]; v != "" {
+			postmarkToken = v
+		}
+		if v := dbEmail["email_from_address"]; v != "" {
+			fromEmail = v
+		}
+		if v := dbEmail["email_base_url"]; v != "" {
+			baseURL = v
+		}
+	}
 	emailClient := email.NewClient(postmarkToken, fromEmail, baseURL)
 
-	// License client
+	// License client: DB value takes priority, env var as fallback
+	licenseKey := os.Getenv("GAMWICH_LICENSE_KEY")
+	if dbKey, err := settingsStore.Get("license_key"); err == nil && dbKey != "" {
+		licenseKey = dbKey
+	}
 	licenseClient := license.NewClient(license.Config{
-		Key:           os.Getenv("GAMWICH_LICENSE_KEY"),
+		Key:           licenseKey,
 		ValidationURL: os.Getenv("GAMWICH_LICENSE_URL"),
 	})
 
-	// Backup config
+	// Backup S3 config: DB values take priority, env vars as fallback
 	backupCfg := backup.Config{
 		DBPath: dbPath,
 		S3: backup.S3Config{
@@ -86,11 +101,36 @@ func main() {
 			SecretKey: os.Getenv("GAMWICH_BACKUP_S3_SECRET_KEY"),
 		},
 	}
+	if dbS3, err := settingsStore.GetS3Settings(); err == nil {
+		if v := dbS3["backup_s3_endpoint"]; v != "" {
+			backupCfg.S3.Endpoint = v
+		}
+		if v := dbS3["backup_s3_bucket"]; v != "" {
+			backupCfg.S3.Bucket = v
+		}
+		if v := dbS3["backup_s3_region"]; v != "" {
+			backupCfg.S3.Region = v
+		}
+		if v := dbS3["backup_s3_access_key"]; v != "" {
+			backupCfg.S3.AccessKey = v
+		}
+		if v := dbS3["backup_s3_secret_key"]; v != "" {
+			backupCfg.S3.SecretKey = v
+		}
+	}
 
-	// Push notification config — auto-generate VAPID keys if not set
+	// Push notification config: DB values take priority, auto-generate + persist if empty
 	pushCfg := push.Config{
 		VAPIDPublicKey:  os.Getenv("GAMWICH_VAPID_PUBLIC_KEY"),
 		VAPIDPrivateKey: os.Getenv("GAMWICH_VAPID_PRIVATE_KEY"),
+	}
+	if dbVAPID, err := settingsStore.GetVAPIDSettings(); err == nil {
+		if v := dbVAPID["vapid_public_key"]; v != "" {
+			pushCfg.VAPIDPublicKey = v
+		}
+		if v := dbVAPID["vapid_private_key"]; v != "" {
+			pushCfg.VAPIDPrivateKey = v
+		}
 	}
 	if pushCfg.VAPIDPublicKey == "" || pushCfg.VAPIDPrivateKey == "" {
 		pub, priv, err := push.GenerateVAPIDKeys()
@@ -99,9 +139,10 @@ func main() {
 		} else {
 			pushCfg.VAPIDPublicKey = pub
 			pushCfg.VAPIDPrivateKey = priv
-			log.Println("push: auto-generated VAPID keys. Set these env vars to persist:")
-			log.Printf("  GAMWICH_VAPID_PUBLIC_KEY=%s", pub)
-			log.Printf("  GAMWICH_VAPID_PRIVATE_KEY=%s", priv)
+			// Persist to DB so keys survive restarts without env vars
+			settingsStore.Set("vapid_public_key", pub)
+			settingsStore.Set("vapid_private_key", priv)
+			log.Println("push: auto-generated and persisted VAPID keys to database")
 		}
 	}
 

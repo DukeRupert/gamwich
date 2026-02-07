@@ -40,6 +40,25 @@ var backupKeys = []string{
 	"backup_passphrase_hash",
 }
 
+var emailKeys = []string{
+	"email_postmark_token",
+	"email_from_address",
+	"email_base_url",
+}
+
+var s3Keys = []string{
+	"backup_s3_endpoint",
+	"backup_s3_bucket",
+	"backup_s3_region",
+	"backup_s3_access_key",
+	"backup_s3_secret_key",
+}
+
+var vapidKeys = []string{
+	"vapid_public_key",
+	"vapid_private_key",
+}
+
 type SettingsStore struct {
 	db *sql.DB
 }
@@ -164,6 +183,54 @@ func (s *SettingsStore) GetBackupSettings() (map[string]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get backup setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetEmailSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range emailKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get email setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetS3Settings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range s3Keys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get s3 setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+	return settings, nil
+}
+
+func (s *SettingsStore) GetVAPIDSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	for _, key := range vapidKeys {
+		var value string
+		err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get vapid setting %q: %w", key, err)
 		}
 		settings[key] = value
 	}

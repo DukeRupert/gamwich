@@ -119,6 +119,24 @@ func newS3Client(cfg S3Config) *s3.Client {
 	return s3.New(opts)
 }
 
+// UpdateS3Config hot-reloads the S3 configuration.
+func (m *Manager) UpdateS3Config(s3cfg S3Config) {
+	m.mu.Lock()
+	m.cfg.S3 = s3cfg
+	if s3cfg.Bucket != "" && s3cfg.AccessKey != "" && s3cfg.SecretKey != "" {
+		m.client = newS3Client(s3cfg)
+		m.status.State = StateIdle
+	} else {
+		m.client = nil
+		m.status.State = StateDisabled
+	}
+	status := m.status
+	m.mu.Unlock()
+	if m.callback != nil {
+		m.callback(status)
+	}
+}
+
 // Start begins the scheduled backup loop.
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
@@ -234,7 +252,10 @@ func (m *Manager) checkSchedule(ctx context.Context) {
 
 // RunNow runs a backup immediately with the provided passphrase.
 func (m *Manager) RunNow(ctx context.Context, householdID int64, passphrase string) (int64, error) {
-	if m.client == nil {
+	m.mu.RLock()
+	client := m.client
+	m.mu.RUnlock()
+	if client == nil {
 		return 0, fmt.Errorf("backup not configured: S3 credentials missing")
 	}
 
@@ -257,6 +278,16 @@ func (m *Manager) RunNow(ctx context.Context, householdID int64, passphrase stri
 }
 
 func (m *Manager) runBackup(ctx context.Context, householdID int64, passphrase string, salt []byte) (int64, error) {
+	// Copy S3 client and bucket under lock
+	m.mu.RLock()
+	client := m.client
+	bucket := m.cfg.S3.Bucket
+	m.mu.RUnlock()
+
+	if client == nil {
+		return 0, fmt.Errorf("backup not configured: S3 credentials missing")
+	}
+
 	m.setStatus(Status{State: StateRunning, InProgress: true})
 
 	timestamp := time.Now().UTC().Format("2006-01-02T150405Z")
@@ -308,8 +339,8 @@ func (m *Manager) runBackup(ctx context.Context, householdID int64, passphrase s
 
 	stat, _ := encData.Stat()
 
-	_, err = m.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(m.cfg.S3.Bucket),
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(bucket),
 		Key:           aws.String(s3Key),
 		Body:          encData,
 		ContentLength: aws.Int64(stat.Size()),
@@ -330,7 +361,12 @@ func (m *Manager) runBackup(ctx context.Context, householdID int64, passphrase s
 
 // Restore downloads a backup from S3, decrypts it, validates it, replaces the DB file, and exits.
 func (m *Manager) Restore(ctx context.Context, backupID, householdID int64, passphrase string) error {
-	if m.client == nil {
+	m.mu.RLock()
+	client := m.client
+	bucket := m.cfg.S3.Bucket
+	m.mu.RUnlock()
+
+	if client == nil {
 		return fmt.Errorf("backup not configured")
 	}
 
@@ -349,8 +385,8 @@ func (m *Manager) Restore(ctx context.Context, backupID, householdID int64, pass
 	defer os.Remove(decFile)
 
 	// Download from S3
-	result, err := m.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(m.cfg.S3.Bucket),
+	result, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
 		Key:    aws.String(record.S3Key),
 	})
 	if err != nil {
@@ -404,7 +440,12 @@ func (m *Manager) Restore(ctx context.Context, backupID, householdID int64, pass
 
 // Download streams an encrypted backup from S3.
 func (m *Manager) Download(ctx context.Context, backupID, householdID int64) (io.ReadCloser, int64, error) {
-	if m.client == nil {
+	m.mu.RLock()
+	client := m.client
+	bucket := m.cfg.S3.Bucket
+	m.mu.RUnlock()
+
+	if client == nil {
 		return nil, 0, fmt.Errorf("backup not configured")
 	}
 
@@ -416,8 +457,8 @@ func (m *Manager) Download(ctx context.Context, backupID, householdID int64) (io
 		return nil, 0, fmt.Errorf("backup not found")
 	}
 
-	result, err := m.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(m.cfg.S3.Bucket),
+	result, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
 		Key:    aws.String(record.S3Key),
 	})
 	if err != nil {
@@ -429,7 +470,12 @@ func (m *Manager) Download(ctx context.Context, backupID, householdID int64) (io
 
 // Cleanup deletes backups older than the retention period.
 func (m *Manager) Cleanup(ctx context.Context, householdID int64, retentionDays int) error {
-	if m.client == nil {
+	m.mu.RLock()
+	client := m.client
+	bucket := m.cfg.S3.Bucket
+	m.mu.RUnlock()
+
+	if client == nil {
 		return nil
 	}
 
@@ -440,8 +486,8 @@ func (m *Manager) Cleanup(ctx context.Context, householdID int64, retentionDays 
 	}
 
 	for _, key := range keys {
-		if _, err := m.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(m.cfg.S3.Bucket),
+		if _, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 		}); err != nil {
 			log.Printf("backup: failed to delete S3 object %s: %v", key, err)

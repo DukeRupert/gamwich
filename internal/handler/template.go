@@ -15,6 +15,7 @@ import (
 	"github.com/dukerupert/gamwich/internal/auth"
 	"github.com/dukerupert/gamwich/internal/backup"
 	"github.com/dukerupert/gamwich/internal/chore"
+	"github.com/dukerupert/gamwich/internal/email"
 	"github.com/dukerupert/gamwich/internal/grocery"
 	"github.com/dukerupert/gamwich/internal/license"
 	"github.com/dukerupert/gamwich/internal/model"
@@ -46,10 +47,11 @@ type TemplateHandler struct {
 	pushStore      *store.PushStore
 	pushService    *push.Service
 	pushScheduler  *push.Scheduler
+	emailClient    *email.Client
 	templates      *template.Template
 }
 
-func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler) *TemplateHandler {
+func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *store.ChoreStore, gs *store.GroceryStore, ns *store.NoteStore, rs *store.RewardStore, ss *store.SettingsStore, w *weather.Service, hub *websocket.Hub, lc *license.Client, tm *tunnel.Manager, bm *backup.Manager, bs *store.BackupStore, ps *store.PushStore, pushSvc *push.Service, pushSched *push.Scheduler, ec *email.Client) *TemplateHandler {
 	funcMap := template.FuncMap{
 		"add":         func(a, b int) int { return a + b },
 		"formatBytes": formatBytes,
@@ -79,6 +81,7 @@ func NewTemplateHandler(s *store.FamilyMemberStore, es *store.EventStore, cs *st
 		pushStore:     ps,
 		pushService:   pushSvc,
 		pushScheduler: pushSched,
+		emailClient:   ec,
 		templates:     tmpl,
 	}
 }
@@ -3612,6 +3615,7 @@ func (h *TemplateHandler) LicenseKeyUpdate(w http.ResponseWriter, r *http.Reques
 
 	key := strings.TrimSpace(r.FormValue("license_key"))
 	h.licenseClient.SetKey(key)
+	h.settingsStore.Set("license_key", key)
 
 	status := h.licenseClient.Status()
 	data := map[string]any{
@@ -3626,6 +3630,94 @@ func (h *TemplateHandler) LicenseKeyUpdate(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("HX-Trigger", `{"showToast": "License key updated"}`)
 	h.renderPartial(w, "license-settings-form", data)
+}
+
+// EmailSettingsPartial renders the email settings card content.
+func (h *TemplateHandler) EmailSettingsPartial(w http.ResponseWriter, r *http.Request) {
+	emailSettings, _ := h.settingsStore.GetEmailSettings()
+	configured := emailSettings["email_postmark_token"] != "" && emailSettings["email_from_address"] != ""
+	data := map[string]any{
+		"PostmarkToken": emailSettings["email_postmark_token"],
+		"FromAddress":   emailSettings["email_from_address"],
+		"BaseURL":       emailSettings["email_base_url"],
+		"Configured":    configured,
+	}
+	h.renderPartial(w, "email-settings-form", data)
+}
+
+// EmailSettingsUpdate handles saving email settings.
+func (h *TemplateHandler) EmailSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	token := strings.TrimSpace(r.FormValue("email_postmark_token"))
+	fromAddr := strings.TrimSpace(r.FormValue("email_from_address"))
+	baseURL := strings.TrimSpace(r.FormValue("email_base_url"))
+
+	h.settingsStore.Set("email_postmark_token", token)
+	h.settingsStore.Set("email_from_address", fromAddr)
+	h.settingsStore.Set("email_base_url", baseURL)
+
+	if h.emailClient != nil {
+		h.emailClient.UpdateConfig(token, fromAddr, baseURL)
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	w.Header().Set("HX-Trigger", `{"showToast": "Email settings updated"}`)
+	h.EmailSettingsPartial(w, r)
+}
+
+// S3SettingsPartial renders the S3 storage settings card content.
+func (h *TemplateHandler) S3SettingsPartial(w http.ResponseWriter, r *http.Request) {
+	s3Settings, _ := h.settingsStore.GetS3Settings()
+	configured := s3Settings["backup_s3_bucket"] != "" && s3Settings["backup_s3_access_key"] != "" && s3Settings["backup_s3_secret_key"] != ""
+	data := map[string]any{
+		"Endpoint":   s3Settings["backup_s3_endpoint"],
+		"Bucket":     s3Settings["backup_s3_bucket"],
+		"Region":     s3Settings["backup_s3_region"],
+		"AccessKey":  s3Settings["backup_s3_access_key"],
+		"SecretKey":  s3Settings["backup_s3_secret_key"],
+		"Configured": configured,
+	}
+	h.renderPartial(w, "s3-settings-form", data)
+}
+
+// S3SettingsUpdate handles saving S3 storage settings.
+func (h *TemplateHandler) S3SettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderToast(w, "error", "Invalid form data")
+		return
+	}
+
+	endpoint := strings.TrimSpace(r.FormValue("backup_s3_endpoint"))
+	bucket := strings.TrimSpace(r.FormValue("backup_s3_bucket"))
+	region := strings.TrimSpace(r.FormValue("backup_s3_region"))
+	accessKey := strings.TrimSpace(r.FormValue("backup_s3_access_key"))
+	secretKey := strings.TrimSpace(r.FormValue("backup_s3_secret_key"))
+
+	h.settingsStore.Set("backup_s3_endpoint", endpoint)
+	h.settingsStore.Set("backup_s3_bucket", bucket)
+	h.settingsStore.Set("backup_s3_region", region)
+	h.settingsStore.Set("backup_s3_access_key", accessKey)
+	h.settingsStore.Set("backup_s3_secret_key", secretKey)
+
+	if h.backupManager != nil {
+		h.backupManager.UpdateS3Config(backup.S3Config{
+			Endpoint:  endpoint,
+			Bucket:    bucket,
+			Region:    region,
+			AccessKey: accessKey,
+			SecretKey: secretKey,
+		})
+	}
+
+	h.broadcast(websocket.NewMessage("settings", "updated", 0, nil))
+
+	w.Header().Set("HX-Trigger", `{"showToast": "S3 storage settings updated"}`)
+	h.S3SettingsPartial(w, r)
 }
 
 func (h *TemplateHandler) render(w http.ResponseWriter, name string, data any) {
@@ -3904,6 +3996,12 @@ func (h *TemplateHandler) PushSettingsPartial(w http.ResponseWriter, r *http.Req
 		data["ChoreEnabled"] = prefMap[model.NotifTypeChoreDue]
 		data["GroceryEnabled"] = prefMap[model.NotifTypeGroceryAdded]
 		data["VAPIDKey"] = vapidKey
+	}
+
+	// Add VAPID key info from DB for display
+	if vapidSettings, err := h.settingsStore.GetVAPIDSettings(); err == nil {
+		data["VAPIDPublicKeyFull"] = vapidSettings["vapid_public_key"]
+		data["VAPIDKeysConfigured"] = vapidSettings["vapid_public_key"] != "" && vapidSettings["vapid_private_key"] != ""
 	}
 
 	h.renderPartial(w, "push-settings-form", data)

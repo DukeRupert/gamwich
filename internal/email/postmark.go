@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 type Client struct {
+	mu          sync.RWMutex
 	serverToken string
 	fromEmail   string
 	baseURL     string
@@ -35,8 +37,19 @@ func NewClient(serverToken, fromEmail, baseURL string, opts ...Option) *Client {
 	return c
 }
 
+// UpdateConfig hot-reloads the email client configuration.
+func (c *Client) UpdateConfig(serverToken, fromEmail, baseURL string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.serverToken = serverToken
+	c.fromEmail = fromEmail
+	c.baseURL = baseURL
+}
+
 // Configured returns true if the server token is set.
 func (c *Client) Configured() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.serverToken != ""
 }
 
@@ -50,7 +63,15 @@ type postmarkEmail struct {
 
 // SendMagicLink sends a magic link email for login, registration, or invitation.
 func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) error {
-	if !c.Configured() {
+	// Copy config under lock
+	c.mu.RLock()
+	serverToken := c.serverToken
+	fromEmail := c.fromEmail
+	baseURL := c.baseURL
+	httpClient := c.httpClient
+	c.mu.RUnlock()
+
+	if serverToken == "" {
 		return fmt.Errorf("email client not configured: missing server token")
 	}
 
@@ -70,7 +91,7 @@ func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) er
 		action = "continue"
 	}
 
-	link := fmt.Sprintf("%s/auth/verify?token=%s", c.baseURL, token)
+	link := fmt.Sprintf("%s/auth/verify?token=%s", baseURL, token)
 	textBody := fmt.Sprintf("Click the link below to %s:\n\n%s\n\nThis link expires in 15 minutes.", action, link)
 	htmlBody := fmt.Sprintf(
 		`<p>Click the link below to %s:</p><p><a href="%s">%s</a></p><p>This link expires in 15 minutes.</p>`,
@@ -78,7 +99,7 @@ func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) er
 	)
 
 	payload := postmarkEmail{
-		From:     c.fromEmail,
+		From:     fromEmail,
 		To:       toEmail,
 		Subject:  subject,
 		HtmlBody: htmlBody,
@@ -96,9 +117,9 @@ func (c *Client) SendMagicLink(toEmail, token, purpose, householdName string) er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Postmark-Server-Token", c.serverToken)
+	req.Header.Set("X-Postmark-Server-Token", serverToken)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("send email: %w", err)
 	}

@@ -106,9 +106,9 @@ func TestSettingsGetAll(t *testing.T) {
 		t.Fatalf("get all: %v", err)
 	}
 
-	// Should have at least the 12 seed settings (5 kiosk + 3 weather + 4 theme)
-	if len(all) < 12 {
-		t.Fatalf("expected at least 12 settings, got %d", len(all))
+	// Should have at least the 22 seed settings (5 kiosk + 3 weather + 4 theme + 3 email + 5 s3 + 2 vapid)
+	if len(all) < 22 {
+		t.Fatalf("expected at least 22 settings, got %d", len(all))
 	}
 
 	if all["idle_timeout_minutes"] != "5" {
@@ -232,6 +232,144 @@ func TestSettingsGetThemeSettings(t *testing.T) {
 
 	if _, ok := theme["non_theme_key"]; ok {
 		t.Error("non-theme key should not be in theme settings")
+	}
+}
+
+func TestSettingsEmailSeedData(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	settings, err := ss.GetEmailSettings()
+	if err != nil {
+		t.Fatalf("get email settings: %v", err)
+	}
+
+	for _, key := range []string{"email_postmark_token", "email_from_address", "email_base_url"} {
+		got, ok := settings[key]
+		if !ok {
+			t.Errorf("missing email setting %q", key)
+			continue
+		}
+		if got != "" {
+			t.Errorf("setting %q = %q, want empty string", key, got)
+		}
+	}
+}
+
+func TestSettingsGetEmailSettings(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	if err := ss.Set("email_postmark_token", "test-token"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := ss.Set("email_from_address", "test@example.com"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	settings, err := ss.GetEmailSettings()
+	if err != nil {
+		t.Fatalf("get email: %v", err)
+	}
+
+	if settings["email_postmark_token"] != "test-token" {
+		t.Errorf("email_postmark_token = %q, want %q", settings["email_postmark_token"], "test-token")
+	}
+	if settings["email_from_address"] != "test@example.com" {
+		t.Errorf("email_from_address = %q, want %q", settings["email_from_address"], "test@example.com")
+	}
+	if len(settings) != 3 {
+		t.Errorf("expected 3 email settings, got %d", len(settings))
+	}
+}
+
+func TestSettingsS3SeedData(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	settings, err := ss.GetS3Settings()
+	if err != nil {
+		t.Fatalf("get s3 settings: %v", err)
+	}
+
+	for _, key := range []string{"backup_s3_endpoint", "backup_s3_bucket", "backup_s3_region", "backup_s3_access_key", "backup_s3_secret_key"} {
+		got, ok := settings[key]
+		if !ok {
+			t.Errorf("missing s3 setting %q", key)
+			continue
+		}
+		if got != "" {
+			t.Errorf("setting %q = %q, want empty string", key, got)
+		}
+	}
+}
+
+func TestSettingsGetS3Settings(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	if err := ss.Set("backup_s3_bucket", "my-bucket"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := ss.Set("backup_s3_access_key", "AKID"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	settings, err := ss.GetS3Settings()
+	if err != nil {
+		t.Fatalf("get s3: %v", err)
+	}
+
+	if settings["backup_s3_bucket"] != "my-bucket" {
+		t.Errorf("backup_s3_bucket = %q, want %q", settings["backup_s3_bucket"], "my-bucket")
+	}
+	if settings["backup_s3_access_key"] != "AKID" {
+		t.Errorf("backup_s3_access_key = %q, want %q", settings["backup_s3_access_key"], "AKID")
+	}
+	if len(settings) != 5 {
+		t.Errorf("expected 5 s3 settings, got %d", len(settings))
+	}
+}
+
+func TestSettingsVAPIDSeedData(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	settings, err := ss.GetVAPIDSettings()
+	if err != nil {
+		t.Fatalf("get vapid settings: %v", err)
+	}
+
+	for _, key := range []string{"vapid_public_key", "vapid_private_key"} {
+		got, ok := settings[key]
+		if !ok {
+			t.Errorf("missing vapid setting %q", key)
+			continue
+		}
+		if got != "" {
+			t.Errorf("setting %q = %q, want empty string", key, got)
+		}
+	}
+}
+
+func TestSettingsGetVAPIDSettings(t *testing.T) {
+	ss := setupSettingsTestDB(t)
+
+	if err := ss.Set("vapid_public_key", "pub-key-123"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := ss.Set("vapid_private_key", "priv-key-456"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	settings, err := ss.GetVAPIDSettings()
+	if err != nil {
+		t.Fatalf("get vapid: %v", err)
+	}
+
+	if settings["vapid_public_key"] != "pub-key-123" {
+		t.Errorf("vapid_public_key = %q, want %q", settings["vapid_public_key"], "pub-key-123")
+	}
+	if settings["vapid_private_key"] != "priv-key-456" {
+		t.Errorf("vapid_private_key = %q, want %q", settings["vapid_private_key"], "priv-key-456")
+	}
+	if len(settings) != 2 {
+		t.Errorf("expected 2 vapid settings, got %d", len(settings))
 	}
 }
 

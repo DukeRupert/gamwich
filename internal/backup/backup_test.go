@@ -141,6 +141,46 @@ func TestManagerCachedKey(t *testing.T) {
 	}
 }
 
+func TestUpdateS3Config(t *testing.T) {
+	var received []Status
+	var mu sync.Mutex
+	cb := func(s Status) {
+		mu.Lock()
+		received = append(received, s)
+		mu.Unlock()
+	}
+
+	// Start disabled
+	m := NewManager(Config{}, nil, nil, nil, cb)
+	if m.Status().State != StateDisabled {
+		t.Fatalf("initial state = %q, want %q", m.Status().State, StateDisabled)
+	}
+
+	// Set valid config -> transitions to idle
+	m.UpdateS3Config(S3Config{Bucket: "test", AccessKey: "key", SecretKey: "secret", Region: "us-east-1"})
+	if m.Status().State != StateIdle {
+		t.Errorf("state after set = %q, want %q", m.Status().State, StateIdle)
+	}
+
+	// Clear config -> transitions back to disabled
+	m.UpdateS3Config(S3Config{})
+	if m.Status().State != StateDisabled {
+		t.Errorf("state after clear = %q, want %q", m.Status().State, StateDisabled)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 2 {
+		t.Fatalf("received %d callbacks, want 2", len(received))
+	}
+	if received[0].State != StateIdle {
+		t.Errorf("first callback state = %q, want %q", received[0].State, StateIdle)
+	}
+	if received[1].State != StateDisabled {
+		t.Errorf("second callback state = %q, want %q", received[1].State, StateDisabled)
+	}
+}
+
 func TestManagerDisabledNoStart(t *testing.T) {
 	m := NewManager(Config{}, nil, nil, nil, nil)
 

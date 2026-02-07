@@ -88,6 +88,24 @@
             </div>
         </div>
 
+        <!-- Email Settings -->
+        <div class="card bg-base-100 shadow-md">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Email
+                </h2>
+                <div id="email-settings-container"
+                     hx-get="/partials/settings/email"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
+            </div>
+        </div>
+
         <!-- Subscription -->
         <div class="card bg-base-100 shadow-md">
             <div class="card-body">
@@ -117,6 +135,24 @@
                 </h2>
                 <div id="tunnel-settings-container"
                      hx-get="/partials/settings/tunnel"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <span class="loading loading-spinner loading-sm"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- S3 Storage -->
+        <div class="card bg-base-100 shadow-md">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                    </svg>
+                    S3 Storage
+                </h2>
+                <div id="s3-settings-container"
+                     hx-get="/partials/settings/s3"
                      hx-trigger="load"
                      hx-swap="innerHTML">
                     <span class="loading loading-spinner loading-sm"></span>
@@ -837,6 +873,28 @@
                 {{end}}
             </div>
         </template>
+
+        {{if .VAPIDKeysConfigured}}
+        <details class="collapse collapse-arrow bg-base-200 mt-3">
+            <summary class="collapse-title text-sm font-medium p-2 min-h-0">VAPID Keys</summary>
+            <div class="collapse-content p-2 space-y-2" x-data="{ showKey: false }">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text text-xs font-medium">Public key</span>
+                        <button type="button" class="btn btn-xs btn-ghost" @click="showKey = !showKey"
+                                x-text="showKey ? 'Hide' : 'Show'"></button>
+                    </label>
+                    <template x-if="showKey">
+                        <code class="text-xs break-all bg-base-300 rounded p-2">{{.VAPIDPublicKeyFull}}</code>
+                    </template>
+                    <template x-if="!showKey">
+                        <code class="text-xs bg-base-300 rounded p-2">••••••••••••••••</code>
+                    </template>
+                </div>
+                <p class="text-xs text-warning">Changing VAPID keys invalidates all existing push subscriptions.</p>
+            </div>
+        </details>
+        {{end}}
     </div>
 
     <script>
@@ -934,6 +992,133 @@
     }
     </script>
     {{end}}
+</div>
+{{end}}
+
+{{define "email-settings-form"}}
+<div class="space-y-3">
+    {{if .Configured}}
+    <div class="badge badge-success badge-sm">Configured</div>
+    {{else}}
+    <div class="badge badge-ghost badge-sm">Not configured</div>
+    {{end}}
+    <p class="text-xs text-base-content/50">Configure Postmark for magic link emails (login, invites).</p>
+
+    <form hx-put="/partials/settings/email"
+          hx-target="#email-settings-container"
+          hx-swap="innerHTML"
+          class="space-y-3"
+          x-data="{ showToken: false }">
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Postmark server token</span>
+                <button type="button" class="btn btn-xs btn-ghost" @click="showToken = !showToken"
+                        x-text="showToken ? 'Hide' : 'Show'"></button>
+            </label>
+            <input :type="showToken ? 'text' : 'password'" name="email_postmark_token"
+                   value="{{.PostmarkToken}}"
+                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                   class="input input-bordered input-sm w-full font-mono">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">From email address</span>
+            </label>
+            <input type="email" name="email_from_address"
+                   value="{{.FromAddress}}"
+                   placeholder="noreply@yourdomain.com"
+                   class="input input-bordered input-sm w-full">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Base URL</span>
+            </label>
+            <input type="url" name="email_base_url"
+                   value="{{.BaseURL}}"
+                   placeholder="https://gamwich.yourdomain.com"
+                   class="input input-bordered input-sm w-full">
+            <label class="label">
+                <span class="label-text-alt">URL used in magic link emails</span>
+            </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
+    </form>
+</div>
+{{end}}
+
+{{define "s3-settings-form"}}
+<div class="space-y-3">
+    {{if .Configured}}
+    <div class="badge badge-success badge-sm">Configured</div>
+    {{else}}
+    <div class="badge badge-ghost badge-sm">Not configured</div>
+    {{end}}
+    <p class="text-xs text-base-content/50">S3-compatible storage for encrypted backups (e.g. Backblaze B2, Wasabi, AWS S3).</p>
+
+    <form hx-put="/partials/settings/s3"
+          hx-target="#s3-settings-container"
+          hx-swap="innerHTML"
+          class="space-y-3"
+          x-data="{ showKeys: false }">
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Endpoint</span>
+            </label>
+            <input type="url" name="backup_s3_endpoint"
+                   value="{{.Endpoint}}"
+                   placeholder="https://s3.us-west-001.backblazeb2.com"
+                   class="input input-bordered input-sm w-full">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Bucket</span>
+            </label>
+            <input type="text" name="backup_s3_bucket"
+                   value="{{.Bucket}}"
+                   placeholder="gamwich-backups"
+                   class="input input-bordered input-sm w-full">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Region</span>
+            </label>
+            <input type="text" name="backup_s3_region"
+                   value="{{.Region}}"
+                   placeholder="us-west-001"
+                   class="input input-bordered input-sm w-full">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Access key</span>
+                <button type="button" class="btn btn-xs btn-ghost" @click="showKeys = !showKeys"
+                        x-text="showKeys ? 'Hide' : 'Show'"></button>
+            </label>
+            <input :type="showKeys ? 'text' : 'password'" name="backup_s3_access_key"
+                   value="{{.AccessKey}}"
+                   placeholder="Access key ID"
+                   class="input input-bordered input-sm w-full font-mono">
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Secret key</span>
+            </label>
+            <input :type="showKeys ? 'text' : 'password'" name="backup_s3_secret_key"
+                   value="{{.SecretKey}}"
+                   placeholder="Secret access key"
+                   class="input input-bordered input-sm w-full font-mono">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-full">Save</button>
+    </form>
 </div>
 {{end}}
 
