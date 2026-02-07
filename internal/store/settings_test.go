@@ -196,9 +196,9 @@ func TestSettingsThemeSeedData(t *testing.T) {
 
 	expected := map[string]string{
 		"theme_mode":     "manual",
-		"theme_selected": "garden",
-		"theme_light":    "garden",
-		"theme_dark":     "forest",
+		"theme_selected": "light",
+		"theme_light":    "light",
+		"theme_dark":     "dark",
 	}
 
 	for key, want := range expected {
