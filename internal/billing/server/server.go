@@ -22,10 +22,13 @@ type Server struct {
 	subscriptionStore *store.SubscriptionStore
 	licenseKeyStore   *store.LicenseKeyStore
 	sessionStore      *store.SessionStore
+	waitlistStore     *store.WaitlistStore
 	webhookH          *handler.WebhookHandler
 	checkoutH         *handler.CheckoutHandler
 	authH             *handler.AuthHandler
 	accountH          *handler.AccountHandler
+	marketingH        *handler.MarketingHandler
+	waitlistH         *handler.WaitlistHandler
 	stripeClient      *billingstripe.Client
 	rateLimiter       *sharedmw.RateLimiter
 }
@@ -55,15 +58,23 @@ func New(db *sql.DB, cfg Config, logger *slog.Logger) *Server {
 		checkoutH = handler.NewCheckoutHandler(stripeClient, accountStore)
 	}
 
-	// Load billing templates
+	// Load billing templates — per-page sets to avoid {{define "content"}} collisions
 	tmplDir := cfg.TemplatesDir
 	if tmplDir == "" {
 		tmplDir = "web/billing/templates"
 	}
-	tmpl := template.Must(template.ParseGlob(tmplDir + "/*.html"))
+	layoutFile := tmplDir + "/layout.html"
+	templates := make(map[string]*template.Template)
+	pages := []string{"login.html", "check_email.html", "pricing.html", "account.html", "index.html", "features.html"}
+	for _, page := range pages {
+		templates[page] = template.Must(template.ParseFiles(layoutFile, tmplDir+"/"+page))
+	}
 
-	authH := handler.NewAuthHandler(accountStore, sessionStore, cfg.EmailClient, cfg.BaseURL, tmpl, logger.With("component", "auth"))
-	accountH := handler.NewAccountHandler(accountStore, subscriptionStore, licenseKeyStore, tmpl, cfg.BaseURL, logger.With("component", "account"))
+	authH := handler.NewAuthHandler(accountStore, sessionStore, cfg.EmailClient, cfg.BaseURL, templates, logger.With("component", "auth"))
+	accountH := handler.NewAccountHandler(accountStore, subscriptionStore, licenseKeyStore, templates, cfg.BaseURL, logger.With("component", "account"))
+	marketingH := handler.NewMarketingHandler(templates, cfg.BaseURL, logger.With("component", "marketing"))
+	waitlistStore := store.NewWaitlistStore(db)
+	waitlistH := handler.NewWaitlistHandler(waitlistStore, logger.With("component", "waitlist"))
 
 	return &Server{
 		db:                db,
@@ -71,10 +82,13 @@ func New(db *sql.DB, cfg Config, logger *slog.Logger) *Server {
 		subscriptionStore: subscriptionStore,
 		licenseKeyStore:   licenseKeyStore,
 		sessionStore:      sessionStore,
+		waitlistStore:     waitlistStore,
 		webhookH:          webhookH,
 		checkoutH:         checkoutH,
 		authH:             authH,
 		accountH:          accountH,
+		marketingH:        marketingH,
+		waitlistH:         waitlistH,
 		stripeClient:      stripeClient,
 		rateLimiter:       sharedmw.NewRateLimiter(),
 	}
@@ -91,18 +105,23 @@ func (s *Server) RateLimiter() *sharedmw.RateLimiter {
 }
 
 func (s *Server) Router() http.Handler {
-	outerMux := http.NewServeMux()
+	mux := http.NewServeMux()
 
-	// Public routes
-	outerMux.HandleFunc("GET /health", s.healthCheck)
-	outerMux.HandleFunc("GET /login", s.authH.LoginPage)
-	outerMux.HandleFunc("POST /login", s.rateLimitedHandler(s.authH.Login))
-	outerMux.HandleFunc("GET /auth/verify", s.authH.Verify)
-	outerMux.HandleFunc("GET /pricing", s.accountH.PricingPage)
+	// Public marketing routes
+	mux.HandleFunc("GET /{$}", s.marketingH.LandingPage)
+	mux.HandleFunc("GET /features", s.marketingH.FeaturesPage)
+	mux.HandleFunc("GET /pricing", s.accountH.PricingPage)
+	mux.HandleFunc("POST /waitlist", s.rateLimitedHandler(s.waitlistH.Join))
+
+	// Auth routes (public)
+	mux.HandleFunc("GET /health", s.healthCheck)
+	mux.HandleFunc("GET /login", s.authH.LoginPage)
+	mux.HandleFunc("POST /login", s.rateLimitedHandler(s.authH.Login))
+	mux.HandleFunc("GET /auth/verify", s.authH.Verify)
 
 	// Stripe webhook (public, no auth)
 	if s.webhookH != nil {
-		outerMux.HandleFunc("POST /webhooks/stripe", s.webhookH.HandleStripeWebhook)
+		mux.HandleFunc("POST /webhooks/stripe", s.webhookH.HandleStripeWebhook)
 	}
 
 	// License validation (public, rate-limited)
@@ -110,25 +129,27 @@ func (s *Server) Router() http.Handler {
 	rateLimitMw := sharedmw.RateLimit(s.rateLimiter, func(r *http.Request) string {
 		return r.RemoteAddr
 	}, 10, time.Minute)
-	outerMux.Handle("POST /api/license/validate", rateLimitMw(http.HandlerFunc(licenseH.Validate)))
+	mux.Handle("POST /api/license/validate", rateLimitMw(http.HandlerFunc(licenseH.Validate)))
 
 	// Static files
-	outerMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/billing/static"))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/billing/static"))))
 
-	// Protected routes
-	protectedMux := http.NewServeMux()
-	protectedMux.HandleFunc("POST /logout", s.authH.Logout)
-	protectedMux.HandleFunc("GET /account", s.accountH.Dashboard)
+	// SEO static files
+	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/billing/static/robots.txt")
+	})
+
+	// Protected routes (explicitly registered with auth middleware)
+	authMw := middleware.RequireAuth(s.sessionStore)
+	mux.Handle("POST /logout", authMw(http.HandlerFunc(s.authH.Logout)))
+	mux.Handle("GET /account", authMw(http.HandlerFunc(s.accountH.Dashboard)))
 
 	if s.checkoutH != nil {
-		protectedMux.HandleFunc("POST /api/checkout", s.checkoutH.CreateCheckoutSession)
-		protectedMux.HandleFunc("POST /api/billing-portal", s.checkoutH.BillingPortal)
+		mux.Handle("POST /api/checkout", authMw(http.HandlerFunc(s.checkoutH.CreateCheckoutSession)))
+		mux.Handle("POST /api/billing-portal", authMw(http.HandlerFunc(s.checkoutH.BillingPortal)))
 	}
 
-	authMw := middleware.RequireAuth(s.sessionStore)
-	outerMux.Handle("/", authMw(protectedMux))
-
-	return outerMux
+	return mux
 }
 
 func (s *Server) rateLimitedHandler(h http.HandlerFunc) http.HandlerFunc {

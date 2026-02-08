@@ -14,7 +14,7 @@ type AccountHandler struct {
 	accountStore      *store.AccountStore
 	subscriptionStore *store.SubscriptionStore
 	licenseKeyStore   *store.LicenseKeyStore
-	templates         *template.Template
+	templates         map[string]*template.Template
 	baseURL           string
 	logger            *slog.Logger
 }
@@ -23,7 +23,7 @@ func NewAccountHandler(
 	as *store.AccountStore,
 	ss *store.SubscriptionStore,
 	lks *store.LicenseKeyStore,
-	tmpl *template.Template,
+	tmpl map[string]*template.Template,
 	baseURL string,
 	logger *slog.Logger,
 ) *AccountHandler {
@@ -60,6 +60,8 @@ func (h *AccountHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"LicenseKey":   lk,
 		"BaseURL":      h.baseURL,
 		"Year":         time.Now().Year(),
+		"ActiveNav":    "account",
+		"AccountEmail": account.Email,
 	}
 	h.render(w, "account.html", data)
 }
@@ -67,15 +69,28 @@ func (h *AccountHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 // PricingPage renders the pricing page.
 func (h *AccountHandler) PricingPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
-		"BaseURL": h.baseURL,
-		"Year":    time.Now().Year(),
+		"BaseURL":        h.baseURL,
+		"Year":           time.Now().Year(),
+		"ActiveNav":      "pricing",
+		"WaitlistStatus": r.URL.Query().Get("waitlist"),
 	}
 	h.render(w, "pricing.html", data)
 }
 
 func (h *AccountHandler) render(w http.ResponseWriter, name string, data any) {
+	if m, ok := data.(map[string]any); ok {
+		if _, exists := m["ActiveNav"]; !exists {
+			m["ActiveNav"] = ""
+		}
+	}
+	tmpl, ok := h.templates[name]
+	if !ok {
+		h.logger.Error("template not found", "name", name)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
 		h.logger.Error("template render", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}

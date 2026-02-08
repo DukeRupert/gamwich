@@ -17,7 +17,7 @@ type AuthHandler struct {
 	sessionStore *store.SessionStore
 	emailClient  *email.Client
 	baseURL      string
-	templates    *template.Template
+	templates    map[string]*template.Template
 	logger       *slog.Logger
 }
 
@@ -26,7 +26,7 @@ func NewAuthHandler(
 	ss *store.SessionStore,
 	ec *email.Client,
 	baseURL string,
-	tmpl *template.Template,
+	tmpl map[string]*template.Template,
 	logger *slog.Logger,
 ) *AuthHandler {
 	return &AuthHandler{
@@ -140,14 +140,23 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) render(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if data == nil {
-		data = map[string]any{"BaseURL": h.baseURL, "Year": time.Now().Year()}
+		data = map[string]any{"BaseURL": h.baseURL, "Year": time.Now().Year(), "ActiveNav": ""}
 	} else if m, ok := data.(map[string]any); ok {
 		m["BaseURL"] = h.baseURL
 		m["Year"] = time.Now().Year()
+		if _, exists := m["ActiveNav"]; !exists {
+			m["ActiveNav"] = ""
+		}
 	}
-	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
+	tmpl, ok := h.templates[name]
+	if !ok {
+		h.logger.Error("template not found", "name", name)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
 		h.logger.Error("template render", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}

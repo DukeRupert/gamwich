@@ -1,4 +1,16 @@
 {{define "content"}}
+{{if eq .WaitlistStatus "success"}}
+<div class="alert alert-success mb-6 max-w-5xl mx-auto">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    <span>You're on the waitlist! We'll email you when the Hosted plan is available.</span>
+</div>
+{{end}}
+{{if eq .WaitlistStatus "error"}}
+<div class="alert alert-error mb-6 max-w-5xl mx-auto">
+    <span>Please enter a valid email address.</span>
+</div>
+{{end}}
+
 <div class="text-center mb-8">
     <h1 class="text-4xl font-bold mb-2">Pricing</h1>
     <p class="text-lg text-base-content/60">Choose the plan that works for your household.</p>
@@ -97,11 +109,15 @@
                 </li>
             </ul>
             <div class="card-actions justify-center mt-4">
-                <span class="btn btn-outline btn-sm w-full opacity-50">Coming Soon</span>
+                <form method="POST" action="/waitlist" class="w-full">
+                    <input type="hidden" name="plan" value="hosted">
+                    <div class="join w-full">
+                        <input type="email" name="email" placeholder="you@example.com" required class="input input-bordered input-sm join-item w-full">
+                        <button type="submit" class="btn btn-outline btn-sm join-item">Join Waitlist</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 </div>
 {{end}}
-
-{{template "layout.html" .}}
