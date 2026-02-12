@@ -3,11 +3,11 @@ package stripe
 import (
 	"fmt"
 
-	stripe "github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/billingportal/session"
-	checksession "github.com/stripe/stripe-go/v82/checkout/session"
-	"github.com/stripe/stripe-go/v82/customer"
-	"github.com/stripe/stripe-go/v82/webhook"
+	stripe "github.com/stripe/stripe-go/v84"
+	"github.com/stripe/stripe-go/v84/billingportal/session"
+	checksession "github.com/stripe/stripe-go/v84/checkout/session"
+	"github.com/stripe/stripe-go/v84/customer"
+	"github.com/stripe/stripe-go/v84/webhook"
 )
 
 type Config struct {

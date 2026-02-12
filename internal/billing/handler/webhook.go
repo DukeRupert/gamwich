@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	stripe "github.com/stripe/stripe-go/v82"
+	stripe "github.com/stripe/stripe-go/v84"
 
 	billingstripe "github.com/dukerupert/gamwich/internal/billing/stripe"
 	"github.com/dukerupert/gamwich/internal/billing/store"
