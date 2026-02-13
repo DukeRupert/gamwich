@@ -25,10 +25,14 @@
                 {{if .Subscription.CancelAtPeriodEnd}}
                 <p class="text-sm text-warning">Cancels at end of billing period</p>
                 {{end}}
+                <button onclick="manageBilling()" class="btn btn-outline btn-sm mt-2">Manage Subscription</button>
             </div>
             {{else}}
             <p class="text-base-content/60">No active subscription</p>
-            <a href="/pricing" class="btn btn-primary btn-sm mt-2">View Plans</a>
+            <div class="flex gap-2 mt-2">
+                <button onclick="startCheckout('cloud')" class="btn btn-primary btn-sm">Subscribe to Cloud</button>
+                <a href="/pricing" class="btn btn-ghost btn-sm">View Plans</a>
+            </div>
             {{end}}
         </div>
     </div>
@@ -56,4 +60,35 @@
     </div>
     {{end}}
 </div>
+
+<script>
+async function startCheckout(plan) {
+    try {
+        const resp = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan: plan})
+        });
+        if (!resp.ok) throw new Error('Checkout failed');
+        const data = await resp.json();
+        if (data.url) window.location.href = data.url;
+    } catch (err) {
+        alert('Unable to start checkout. Please try again.');
+    }
+}
+
+async function manageBilling() {
+    try {
+        const resp = await fetch('/api/billing-portal', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        if (!resp.ok) throw new Error('Portal request failed');
+        const data = await resp.json();
+        if (data.url) window.location.href = data.url;
+    } catch (err) {
+        alert('Unable to open billing portal. Please try again.');
+    }
+}
+</script>
 {{end}}

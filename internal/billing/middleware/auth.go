@@ -31,6 +31,24 @@ func RequireAuth(sessionStore *store.SessionStore) func(http.Handler) http.Handl
 	}
 }
 
+// OptionalAuth populates account ID in context if a valid session exists,
+// but does not redirect if no session is found.
+func OptionalAuth(sessionStore *store.SessionStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie(sessionCookieName)
+			if err == nil && cookie.Value != "" {
+				sess, err := sessionStore.GetByToken(cookie.Value)
+				if err == nil && sess != nil {
+					ctx := handler.WithAccountID(r.Context(), sess.AccountID)
+					r = r.WithContext(ctx)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", "/login")

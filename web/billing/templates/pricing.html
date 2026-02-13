@@ -77,7 +77,13 @@
                 </li>
             </ul>
             <div class="card-actions justify-center mt-4">
-                <a href="/login" class="btn btn-secondary btn-sm w-full">Get Started</a>
+                {{if .HasSubscription}}
+                <button class="btn btn-secondary btn-sm w-full" disabled>Current Plan</button>
+                {{else if .IsAuthenticated}}
+                <button onclick="startCheckout('cloud')" class="btn btn-secondary btn-sm w-full">Get Started</button>
+                {{else}}
+                <a href="/login?redirect=/pricing" class="btn btn-secondary btn-sm w-full">Get Started</a>
+                {{end}}
             </div>
         </div>
     </div>
@@ -120,4 +126,23 @@
         </div>
     </div>
 </div>
+
+{{if .IsAuthenticated}}
+<script>
+async function startCheckout(plan) {
+    try {
+        const resp = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan: plan})
+        });
+        if (!resp.ok) throw new Error('Checkout failed');
+        const data = await resp.json();
+        if (data.url) window.location.href = data.url;
+    } catch (err) {
+        alert('Unable to start checkout. Please try again.');
+    }
+}
+</script>
+{{end}}
 {{end}}

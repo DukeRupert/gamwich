@@ -12,6 +12,7 @@
             {{end}}
 
             <form method="POST" action="/login" class="space-y-4">
+                {{if .Redirect}}<input type="hidden" name="redirect" value="{{.Redirect}}">{{end}}
                 <div class="form-control">
                     <label class="label">
                         <span class="label-text">Email address</span>

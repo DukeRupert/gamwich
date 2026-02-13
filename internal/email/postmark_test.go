@@ -43,15 +43,16 @@ func TestSendAuthCodeLogin(t *testing.T) {
 	if received.Subject != "Sign in to Gamwich" {
 		t.Errorf("Subject = %q, want %q", received.Subject, "Sign in to Gamwich")
 	}
-	// Verify the body contains the code, not a link
-	if !strings.Contains(received.TextBody, "123456") {
-		t.Errorf("TextBody should contain code, got: %s", received.TextBody)
+	// Verify the body contains a clickable verify link
+	expectedURL := "https://gamwich.test/auth/verify?token=123456"
+	if !strings.Contains(received.TextBody, expectedURL) {
+		t.Errorf("TextBody should contain verify URL, got: %s", received.TextBody)
 	}
-	if strings.Contains(received.TextBody, "http") {
-		t.Errorf("TextBody should not contain a link for login, got: %s", received.TextBody)
+	if !strings.Contains(received.HtmlBody, expectedURL) {
+		t.Errorf("HtmlBody should contain verify URL, got: %s", received.HtmlBody)
 	}
-	if !strings.Contains(received.HtmlBody, "123456") {
-		t.Errorf("HtmlBody should contain code, got: %s", received.HtmlBody)
+	if !strings.Contains(received.HtmlBody, "Sign in to Gamwich") {
+		t.Errorf("HtmlBody should contain link text, got: %s", received.HtmlBody)
 	}
 }
 

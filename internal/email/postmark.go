@@ -71,10 +71,11 @@ func (c *Client) SendAuthCode(toEmail, code, purpose, householdName string) erro
 	switch purpose {
 	case "login":
 		subject = "Sign in to Gamwich"
-		textBody = fmt.Sprintf("Your sign-in code is: %s\n\nEnter this code to sign in. It expires in 15 minutes.", code)
+		verifyURL := fmt.Sprintf("%s/auth/verify?token=%s", baseURL, url.QueryEscape(code))
+		textBody = fmt.Sprintf("Sign in to Gamwich:\n\n%s\n\nThis link expires in 15 minutes.", verifyURL)
 		htmlBody = fmt.Sprintf(
-			`<p>Your sign-in code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:4px">%s</p><p>Enter this code to sign in. It expires in 15 minutes.</p>`,
-			code,
+			`<p>Click the link below to sign in to Gamwich:</p><p><a href="%s" style="display:inline-block;padding:12px 24px;background-color:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">Sign in to Gamwich</a></p><p style="font-size:12px;color:#666">This link expires in 15 minutes.</p>`,
+			verifyURL,
 		)
 	case "register":
 		subject = "Welcome to Gamwich"

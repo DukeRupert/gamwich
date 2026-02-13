@@ -69,11 +69,25 @@ func (h *AccountHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 // PricingPage renders the pricing page.
 func (h *AccountHandler) PricingPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
-		"BaseURL":        h.baseURL,
-		"Year":           time.Now().Year(),
-		"ActiveNav":      "pricing",
-		"WaitlistStatus": r.URL.Query().Get("waitlist"),
+		"BaseURL":         h.baseURL,
+		"Year":            time.Now().Year(),
+		"ActiveNav":       "pricing",
+		"WaitlistStatus":  r.URL.Query().Get("waitlist"),
+		"IsAuthenticated": false,
+		"HasSubscription": false,
 	}
+
+	accountID := AccountIDFromContext(r.Context())
+	if accountID != 0 {
+		data["IsAuthenticated"] = true
+		if account, err := h.accountStore.GetByID(accountID); err == nil && account != nil {
+			data["AccountEmail"] = account.Email
+		}
+		if sub, err := h.subscriptionStore.GetByAccountID(accountID); err == nil && sub != nil {
+			data["HasSubscription"] = true
+		}
+	}
+
 	h.render(w, "pricing.html", data)
 }
 

@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dukerupert/gamwich/internal/billing/store"
@@ -41,7 +42,11 @@ func NewAuthHandler(
 
 // LoginPage renders the login form.
 func (h *AuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "login.html", nil)
+	data := map[string]any{}
+	if redirect := r.URL.Query().Get("redirect"); redirect != "" {
+		data["Redirect"] = redirect
+	}
+	h.render(w, "login.html", data)
 }
 
 // Login handles the magic link request.
@@ -88,6 +93,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("magic link token generated", "email", addr, "token", sess.Token)
 	}
 
+	// Set redirect cookie if provided
+	if redirect := r.FormValue("redirect"); redirect != "" && isValidRedirect(redirect) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "billing_redirect",
+			Value:    redirect,
+			Path:     "/",
+			MaxAge:   3600, // 1 hour
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
 	// Always show check-email to prevent user enumeration
 	h.render(w, "check_email.html", map[string]any{"Email": addr})
 }
@@ -115,7 +132,21 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, "/account", http.StatusSeeOther)
+	// Check for redirect cookie
+	redirectTarget := "/account"
+	if cookie, err := r.Cookie("billing_redirect"); err == nil && cookie.Value != "" && isValidRedirect(cookie.Value) {
+		redirectTarget = cookie.Value
+		// Clear the redirect cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "billing_redirect",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+		})
+	}
+
+	http.Redirect(w, r, redirectTarget, http.StatusSeeOther)
 }
 
 // Logout destroys the session.
@@ -160,4 +191,9 @@ func (h *AuthHandler) render(w http.ResponseWriter, name string, data any) {
 		h.logger.Error("template render", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
+}
+
+// isValidRedirect checks that a redirect path is a safe relative path.
+func isValidRedirect(path string) bool {
+	return strings.HasPrefix(path, "/") && !strings.Contains(path, "://")
 }

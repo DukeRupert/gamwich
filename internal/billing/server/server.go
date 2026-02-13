@@ -110,7 +110,8 @@ func (s *Server) Router() http.Handler {
 	// Public marketing routes
 	mux.HandleFunc("GET /{$}", s.marketingH.LandingPage)
 	mux.HandleFunc("GET /features", s.marketingH.FeaturesPage)
-	mux.HandleFunc("GET /pricing", s.accountH.PricingPage)
+	optionalAuthMw := middleware.OptionalAuth(s.sessionStore)
+	mux.Handle("GET /pricing", optionalAuthMw(http.HandlerFunc(s.accountH.PricingPage)))
 	mux.HandleFunc("POST /waitlist", s.rateLimitedHandler(s.waitlistH.Join))
 
 	// Auth routes (public)
