@@ -51,8 +51,9 @@ func (c *Client) CreateCheckoutSession(customerID, priceID string) (string, erro
 				Quantity: stripe.Int64(1),
 			},
 		},
-		SuccessURL: stripe.String(c.cfg.SuccessURL),
-		CancelURL:  stripe.String(c.cfg.CancelURL),
+		AllowPromotionCodes: stripe.Bool(true),
+		SuccessURL:          stripe.String(c.cfg.SuccessURL),
+		CancelURL:           stripe.String(c.cfg.CancelURL),
 	}
 	sess, err := checksession.New(params)
 	if err != nil {
