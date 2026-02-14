@@ -44,7 +44,11 @@
                 </li>
             </ul>
             <div class="card-actions justify-center mt-4">
-                <span class="btn btn-ghost btn-sm">Current plan</span>
+                {{if .IsAuthenticated}}
+                <a href="/account" class="btn btn-outline btn-sm w-full">Get Started</a>
+                {{else}}
+                <a href="/login?redirect=/account" class="btn btn-outline btn-sm w-full">Get Started</a>
+                {{end}}
             </div>
         </div>
     </div>
